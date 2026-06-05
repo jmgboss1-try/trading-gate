@@ -1,0 +1,745 @@
+import { useState, useEffect, useRef } from "react";
+
+// ── 상수 ──────────────────────────────────────────────────
+const SYMBOLS = ["BTC/USDT", "ETH/USDT", "SOL/USDT", "XRP/USDT", "BNB/USDT", "DOGE/USDT", "기타"];
+const TIMEFRAMES = ["1m", "3m", "5m", "15m", "30m", "1h", "4h", "1D", "1W"];
+const THRESHOLD = 12; // 진입 허가 최소 점수
+const MAX_SCORE = 22;  // 최대 가능 점수
+
+// ── 분석 항목 정의 (가중치 점수) ──────────────────────────
+const ANALYSIS_ITEMS = [
+  {
+    group: "시장 구조",
+    icon: "📊",
+    items: [
+      { id: "htf_trend", label: "상위 타임프레임 추세", desc: "4H/1D 기준 추세 방향이 진입 방향과 일치하는가", score: 3 },
+      { id: "price_level", label: "주요 레벨 근접", desc: "지지/저항, 피보나치 0.618/0.786/0.886 근처인가", score: 3 },
+      { id: "structure_break", label: "구조 돌파/유지", desc: "BOS(구조 돌파) 또는 CHOCH(추세 전환) 확인", score: 2 },
+    ]
+  },
+  {
+    group: "기술적 근거",
+    icon: "📈",
+    items: [
+      { id: "chart_pattern", label: "차트 패턴", desc: "쐐기, 삼각수렴, 플래그, 헤드앤숄더 등 완성된 패턴", score: 2 },
+      { id: "candle_pattern", label: "캔들 패턴", desc: "핀바, 도지, 엔걸핑 등 반전 캔들 시그널", score: 1 },
+      { id: "volume", label: "거래량 확인", desc: "돌파/반등 시 거래량 증가 또는 수렴 후 폭발", score: 2 },
+      { id: "rsi", label: "RSI 시그널", desc: "과매도(< 30) 또는 과매수(> 70) 구간, 다이버전스", score: 1 },
+      { id: "macd", label: "MACD 시그널", desc: "골든크로스/데드크로스, 히스토그램 방향", score: 1 },
+      { id: "ema", label: "이평선 지지/저항", desc: "EMA 20/50/200 근처 지지 또는 저항 반응", score: 1 },
+    ]
+  },
+  {
+    group: "리스크 & 심리",
+    icon: "🧠",
+    items: [
+      { id: "rr_ratio", label: "손익비 1:2 이상", desc: "목표가 대비 손절폭이 절반 이하인가", score: 3 },
+      { id: "clear_sl", label: "명확한 손절라인", desc: "논리적인 손절 위치가 차트상 명확히 보이는가", score: 2 },
+      { id: "no_revenge", label: "감정 중립 상태", desc: "복수매매, FOMO, 과욕 없이 냉정한 상태인가", score: 1 },
+    ]
+  }
+];
+
+const ALL_ITEMS = ANALYSIS_ITEMS.flatMap(g => g.items);
+
+// ── 스타일 ─────────────────────────────────────────────────
+const CSS = `
+  @import url('https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&family=JetBrains+Mono:wght@400;600&display=swap');
+  * { box-sizing: border-box; margin: 0; padding: 0; -webkit-tap-highlight-color: transparent; }
+  body { background: #060810; color: #e2e8f0; font-family: 'Space Grotesk', sans-serif; min-height: 100vh; }
+  input, select, textarea { font-family: 'Space Grotesk', sans-serif; font-size: 14px; outline: none; }
+  ::-webkit-scrollbar { width: 4px; } ::-webkit-scrollbar-thumb { background: #2a2d3e; border-radius: 2px; }
+  @keyframes fadeUp { from { opacity: 0; transform: translateY(12px); } to { opacity: 1; transform: translateY(0); } }
+  @keyframes pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.5; } }
+  @keyframes spin { to { transform: rotate(360deg); } }
+  @keyframes glow { 0%, 100% { box-shadow: 0 0 20px rgba(99,255,180,0.3); } 50% { box-shadow: 0 0 40px rgba(99,255,180,0.6); } }
+  .fade-up { animation: fadeUp 0.4s ease forwards; }
+  .tab-active { border-bottom: 2px solid #63ffb4 !important; color: #63ffb4 !important; }
+`;
+
+const C = {
+  bg: "#060810", surface: "#0e1120", surface2: "#161929",
+  border: "#1e2235", accent: "#63ffb4", accentDim: "rgba(99,255,180,0.12)",
+  red: "#ff4d6d", redDim: "rgba(255,77,109,0.12)",
+  yellow: "#ffd166", yellowDim: "rgba(255,209,102,0.1)",
+  blue: "#4da6ff", text: "#e2e8f0", muted: "#5a6080",
+  long: "#63ffb4", short: "#ff4d6d",
+};
+
+const fmt = (v, cur = "₩") => {
+  const sign = v >= 0 ? "+" : "";
+  if (cur === "₩") return sign + Math.round(v).toLocaleString("ko-KR") + "₩";
+  return sign + Number(v).toFixed(2) + " " + cur;
+};
+const fmtPct = v => (v >= 0 ? "+" : "") + Number(v).toFixed(2) + "%";
+const todayStr = () => new Date().toISOString().split("T")[0];
+
+async function saveData(key, value) {
+  await fetch("/api/data", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ key, value }) });
+}
+async function loadData(key) {
+  const r = await fetch(`/api/data?key=${key}`);
+  const j = await r.json();
+  return j.data;
+}
+
+// ── 컴포넌트 ───────────────────────────────────────────────
+function Card({ children, style, accent }) {
+  return (
+    <div style={{ background: C.surface, border: "1px solid " + (accent ? accent + "40" : C.border), borderRadius: 14, padding: 20, position: "relative", overflow: "hidden", ...style }}>
+      {accent && <div style={{ position: "absolute", top: 0, left: 0, right: 0, height: 2, background: "linear-gradient(90deg," + accent + ",transparent)" }} />}
+      {children}
+    </div>
+  );
+}
+
+function ScoreMeter({ score, max, threshold }) {
+  const pct = Math.min(100, (score / max) * 100);
+  const thresholdPct = (threshold / max) * 100;
+  const passed = score >= threshold;
+  const color = passed ? C.accent : score >= threshold * 0.7 ? C.yellow : C.red;
+  return (
+    <div>
+      <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 8, alignItems: "flex-end" }}>
+        <span style={{ fontSize: 13, color: C.muted }}>분석 점수</span>
+        <span style={{ fontFamily: "'JetBrains Mono',monospace", fontSize: 24, fontWeight: 700, color }}>
+          {score}<span style={{ fontSize: 14, color: C.muted }}>/{max}</span>
+        </span>
+      </div>
+      <div style={{ height: 10, background: C.surface2, borderRadius: 5, overflow: "visible", position: "relative" }}>
+        <div style={{ height: "100%", width: pct + "%", background: "linear-gradient(90deg," + color + "," + color + "99)", borderRadius: 5, transition: "width 0.5s ease" }} />
+        {/* 임계값 마커 */}
+        <div style={{ position: "absolute", top: -4, left: thresholdPct + "%", width: 2, height: 18, background: C.yellow, borderRadius: 1 }} />
+        <div style={{ position: "absolute", top: -20, left: thresholdPct + "%", transform: "translateX(-50%)", fontSize: 9, color: C.yellow, whiteSpace: "nowrap" }}>최소 {threshold}점</div>
+      </div>
+      <div style={{ marginTop: 12, display: "flex", alignItems: "center", gap: 8 }}>
+        <div style={{ width: 10, height: 10, borderRadius: "50%", background: passed ? C.accent : C.red, boxShadow: passed ? "0 0 10px " + C.accent : "0 0 10px " + C.red, animation: "pulse 2s infinite" }} />
+        <span style={{ fontSize: 13, fontWeight: 600, color: passed ? C.accent : C.red }}>
+          {passed ? "✓ 진입 가능" : "✗ 근거 부족 — 더 확인하세요"}
+        </span>
+      </div>
+    </div>
+  );
+}
+
+// ── 분석 마법사 ────────────────────────────────────────────
+function AnalysisWizard({ onComplete, onCancel, initialData }) {
+  const [step, setStep] = useState(1);
+  const [symbol, setSymbol] = useState(initialData?.symbol || "BTC/USDT");
+  const [customSymbol, setCustomSymbol] = useState("");
+  const [dir, setDir] = useState(initialData?.dir || "롱");
+  const [tf, setTf] = useState(initialData?.tf || "15m");
+  const [htfTf, setHtfTf] = useState(initialData?.htfTf || "4h");
+  const [checked, setChecked] = useState(initialData?.checked || {});
+  const [entry, setEntry] = useState(initialData?.entry || "");
+  const [sl, setSl] = useState(initialData?.sl || "");
+  const [tp, setTp] = useState(initialData?.tp || "");
+  const [lev, setLev] = useState(initialData?.lev || "10");
+  const [balance, setBalance] = useState(initialData?.balance || "");
+  const [riskPct, setRiskPct] = useState(initialData?.riskPct || "1");
+  const [memo, setMemo] = useState(initialData?.memo || "");
+  const [aiLoading, setAiLoading] = useState(false);
+  const [aiAdvice, setAiAdvice] = useState("");
+
+  const toggle = id => setChecked(c => ({ ...c, [id]: !c[id] }));
+  const score = ALL_ITEMS.filter(i => checked[i.id]).reduce((a, i) => a + i.score, 0);
+  const passed = score >= THRESHOLD;
+
+  // 리스크 계산
+  const entryN = parseFloat(entry) || 0;
+  const slN = parseFloat(sl) || 0;
+  const tpN = parseFloat(tp) || 0;
+  const levN = parseFloat(lev) || 1;
+  const balN = parseFloat(balance) || 0;
+  const riskN = parseFloat(riskPct) || 1;
+  const maxLoss = balN * (riskN / 100);
+  const slDist = entryN > 0 && slN > 0 ? Math.abs(entryN - slN) / entryN : 0;
+  const posSizeUsdt = slDist > 0 ? (maxLoss / (slDist * levN)) : 0;
+  const rrRatio = entryN > 0 && slN > 0 && tpN > 0
+    ? Math.abs(tpN - entryN) / Math.abs(entryN - slN) : 0;
+
+  const getAiAdvice = async () => {
+    setAiLoading(true); setAiAdvice("");
+    const checkedItems = ALL_ITEMS.filter(i => checked[i.id]).map(i => i.label).join(", ");
+    const unchecked = ALL_ITEMS.filter(i => !checked[i.id]).map(i => i.label).join(", ");
+    const prompt = `코인 선물 트레이딩 전문가로서 다음 진입 분석을 검토하고 한국어로 간결하게 피드백해주세요 (3-5문장):
+종목: ${symbol} / 방향: ${dir} / 타임프레임: ${tf} / 레버리지: ${lev}x
+충족된 조건: ${checkedItems || "없음"}
+미충족 조건: ${unchecked || "없음"}
+진입가: ${entry} / 손절가: ${sl} / 목표가: ${tp} / 손익비: ${rrRatio.toFixed(2)}
+점수: ${score}/${MAX_SCORE} (기준: ${THRESHOLD}점)
+메모: ${memo || "없음"}
+
+핵심만 짚어주세요: 이 진입이 타당한지, 가장 큰 리스크는 무엇인지.`;
+    try {
+      const res = await fetch("/api/ai", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ model: "claude-haiku-4-5-20251001", max_tokens: 500, messages: [{ role: "user", content: prompt }] }) });
+      const data = await res.json();
+      setAiAdvice(data.content?.map(c => c.text || "").join("") || "응답 없음");
+    } catch (e) { setAiAdvice("AI 오류: " + e.message); }
+    setAiLoading(false);
+  };
+
+  const handleComplete = () => {
+    const finalSymbol = symbol === "기타" ? customSymbol : symbol;
+    onComplete({ symbol: finalSymbol, dir, tf, htfTf, checked, entry, sl, tp, lev, balance, riskPct, memo, score, passed, rrRatio: Math.round(rrRatio * 100) / 100, posSizeUsdt: Math.round(posSizeUsdt * 100) / 100, maxLoss: Math.round(maxLoss * 100) / 100, aiAdvice, date: todayStr(), id: Date.now(), status: "active" });
+  };
+
+  return (
+    <div style={{ display: "flex", flexDirection: "column", gap: 0, animation: "fadeUp 0.3s ease" }}>
+      {/* 상단 헤더 */}
+      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 20 }}>
+        <button onClick={onCancel} style={{ background: "none", border: "none", color: C.muted, cursor: "pointer", fontSize: 14, display: "flex", alignItems: "center", gap: 6 }}>← 취소</button>
+        <div style={{ display: "flex", gap: 6 }}>
+          {[1,2,3,4].map(n => (
+            <div key={n} onClick={() => setStep(n)} style={{ width: n <= step ? 28 : 20, height: 6, borderRadius: 3, background: n === step ? C.accent : n < step ? C.accent + "60" : C.surface2, transition: "all 0.3s", cursor: "pointer" }} />
+          ))}
+        </div>
+        <span style={{ fontSize: 12, color: C.muted }}>Step {step}/4</span>
+      </div>
+
+      {/* Step 1: 기본 설정 */}
+      {step === 1 && (
+        <div style={{ display: "flex", flexDirection: "column", gap: 16, animation: "fadeUp 0.3s ease" }}>
+          <div>
+            <div style={{ fontSize: 20, fontWeight: 700, marginBottom: 4 }}>기본 설정</div>
+            <div style={{ fontSize: 13, color: C.muted }}>어떤 종목을 어느 방향으로 분석하나요?</div>
+          </div>
+          <Card accent={dir === "롱" ? C.long : C.short}>
+            <div style={{ display: "flex", gap: 10, marginBottom: 16 }}>
+              {["롱", "숏"].map(d => (
+                <button key={d} onClick={() => setDir(d)} style={{ flex: 1, padding: "14px 0", borderRadius: 10, border: "2px solid " + (dir === d ? (d === "롱" ? C.long : C.short) : C.border), background: dir === d ? (d === "롱" ? "rgba(99,255,180,0.1)" : "rgba(255,77,109,0.1)") : "transparent", color: dir === d ? (d === "롱" ? C.long : C.short) : C.muted, fontWeight: 700, fontSize: 16, cursor: "pointer", fontFamily: "'Space Grotesk',sans-serif" }}>
+                  {d === "롱" ? "▲ 롱" : "▼ 숏"}
+                </button>
+              ))}
+            </div>
+            <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+              <div>
+                <div style={{ fontSize: 11, color: C.muted, marginBottom: 6, fontWeight: 600, letterSpacing: 1 }}>종목</div>
+                <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
+                  {SYMBOLS.map(sym => (
+                    <button key={sym} onClick={() => setSymbol(sym)} style={{ padding: "6px 14px", borderRadius: 20, border: "1px solid " + (symbol === sym ? C.accent : C.border), background: symbol === sym ? C.accentDim : "transparent", color: symbol === sym ? C.accent : C.muted, fontSize: 12, fontWeight: 600, cursor: "pointer", fontFamily: "'JetBrains Mono',monospace" }}>{sym}</button>
+                  ))}
+                </div>
+                {symbol === "기타" && <input value={customSymbol} onChange={e => setCustomSymbol(e.target.value)} placeholder="예: AVAX/USDT" style={{ marginTop: 8, width: "100%", background: C.surface2, border: "1px solid " + C.border, color: C.text, borderRadius: 8, padding: "8px 12px" }} />}
+              </div>
+              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
+                <div>
+                  <div style={{ fontSize: 11, color: C.muted, marginBottom: 6, fontWeight: 600, letterSpacing: 1 }}>진입 타임프레임</div>
+                  <div style={{ display: "flex", flexWrap: "wrap", gap: 5 }}>
+                    {TIMEFRAMES.map(t => (
+                      <button key={t} onClick={() => setTf(t)} style={{ padding: "4px 10px", borderRadius: 16, border: "1px solid " + (tf === t ? C.accent : C.border), background: tf === t ? C.accentDim : "transparent", color: tf === t ? C.accent : C.muted, fontSize: 11, fontWeight: 600, cursor: "pointer", fontFamily: "'JetBrains Mono',monospace" }}>{t}</button>
+                    ))}
+                  </div>
+                </div>
+                <div>
+                  <div style={{ fontSize: 11, color: C.muted, marginBottom: 6, fontWeight: 600, letterSpacing: 1 }}>상위 타임프레임</div>
+                  <div style={{ display: "flex", flexWrap: "wrap", gap: 5 }}>
+                    {TIMEFRAMES.map(t => (
+                      <button key={t} onClick={() => setHtfTf(t)} style={{ padding: "4px 10px", borderRadius: 16, border: "1px solid " + (htfTf === t ? C.blue : C.border), background: htfTf === t ? "rgba(77,166,255,0.1)" : "transparent", color: htfTf === t ? C.blue : C.muted, fontSize: 11, fontWeight: 600, cursor: "pointer", fontFamily: "'JetBrains Mono',monospace" }}>{t}</button>
+                    ))}
+                  </div>
+                </div>
+              </div>
+            </div>
+          </Card>
+          <button onClick={() => setStep(2)} style={{ width: "100%", padding: "14px 0", borderRadius: 12, border: "none", background: C.accent, color: "#000", fontWeight: 700, fontSize: 15, cursor: "pointer", fontFamily: "'Space Grotesk',sans-serif" }}>다음 → 근거 분석</button>
+        </div>
+      )}
+
+      {/* Step 2: 기술적 분석 체크리스트 */}
+      {step === 2 && (
+        <div style={{ display: "flex", flexDirection: "column", gap: 16, animation: "fadeUp 0.3s ease" }}>
+          <div>
+            <div style={{ fontSize: 20, fontWeight: 700, marginBottom: 4 }}>근거 체크리스트</div>
+            <div style={{ fontSize: 13, color: C.muted }}>충족되는 조건만 체크하세요. 솔직하게!</div>
+          </div>
+          <ScoreMeter score={score} max={MAX_SCORE} threshold={THRESHOLD} />
+          {ANALYSIS_ITEMS.map(group => (
+            <Card key={group.group} accent={C.blue}>
+              <div style={{ fontSize: 12, color: C.blue, fontWeight: 700, marginBottom: 14, display: "flex", alignItems: "center", gap: 6 }}><span>{group.icon}</span>{group.group}</div>
+              <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+                {group.items.map(item => {
+                  const isChecked = !!checked[item.id];
+                  return (
+                    <div key={item.id} onClick={() => toggle(item.id)} style={{ display: "flex", alignItems: "flex-start", gap: 12, padding: "12px 14px", borderRadius: 10, background: isChecked ? C.accentDim : C.surface2, border: "1px solid " + (isChecked ? C.accent + "60" : C.border), cursor: "pointer", transition: "all 0.2s" }}>
+                      <div style={{ width: 22, height: 22, borderRadius: 6, border: "2px solid " + (isChecked ? C.accent : C.muted), background: isChecked ? C.accent : "transparent", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0, marginTop: 1, transition: "all 0.2s" }}>
+                        {isChecked && <span style={{ color: "#000", fontSize: 13, fontWeight: 700 }}>✓</span>}
+                      </div>
+                      <div style={{ flex: 1 }}>
+                        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 2 }}>
+                          <span style={{ fontWeight: 600, fontSize: 14, color: isChecked ? C.accent : C.text }}>{item.label}</span>
+                          <span style={{ fontFamily: "'JetBrains Mono',monospace", fontSize: 11, color: isChecked ? C.accent : C.muted, background: isChecked ? C.accentDim : C.surface, padding: "1px 8px", borderRadius: 10, border: "1px solid " + (isChecked ? C.accent + "40" : C.border) }}>+{item.score}점</span>
+                        </div>
+                        <div style={{ fontSize: 11, color: C.muted, lineHeight: 1.4 }}>{item.desc}</div>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            </Card>
+          ))}
+          <div style={{ display: "flex", gap: 10 }}>
+            <button onClick={() => setStep(1)} style={{ flex: 1, padding: "13px 0", borderRadius: 12, border: "1px solid " + C.border, background: "transparent", color: C.muted, fontWeight: 600, fontSize: 14, cursor: "pointer", fontFamily: "'Space Grotesk',sans-serif" }}>← 이전</button>
+            <button onClick={() => setStep(3)} style={{ flex: 2, padding: "13px 0", borderRadius: 12, border: "none", background: passed ? C.accent : C.surface2, color: passed ? "#000" : C.muted, fontWeight: 700, fontSize: 14, cursor: "pointer", fontFamily: "'Space Grotesk',sans-serif" }}>
+              {passed ? "다음 → 리스크 계산 ✓" : `점수 부족 (${score}/${THRESHOLD}점) — 계속 진행`}
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* Step 3: 리스크 계산기 */}
+      {step === 3 && (
+        <div style={{ display: "flex", flexDirection: "column", gap: 16, animation: "fadeUp 0.3s ease" }}>
+          <div>
+            <div style={{ fontSize: 20, fontWeight: 700, marginBottom: 4 }}>리스크 계산기</div>
+            <div style={{ fontSize: 13, color: C.muted }}>손절가를 먼저 정하고 포지션 크기를 계산하세요</div>
+          </div>
+          <Card accent={C.yellow}>
+            <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
+                {[["진입가 (USDT)", entry, setEntry], ["손절가 (USDT)", sl, setSl], ["목표가 (USDT)", tp, setTp], ["레버리지 (x)", lev, setLev]].map(([label, val, setter]) => (
+                  <div key={label}>
+                    <div style={{ fontSize: 11, color: C.muted, marginBottom: 5, fontWeight: 600, letterSpacing: 0.5 }}>{label}</div>
+                    <input type="number" value={val} onChange={e => setter(e.target.value)} placeholder="0" style={{ width: "100%", background: C.surface2, border: "1px solid " + C.border, color: C.text, borderRadius: 8, padding: "10px 12px", fontFamily: "'JetBrains Mono',monospace", fontSize: 14 }} />
+                  </div>
+                ))}
+              </div>
+              <div style={{ height: 1, background: C.border }} />
+              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
+                <div>
+                  <div style={{ fontSize: 11, color: C.muted, marginBottom: 5, fontWeight: 600, letterSpacing: 0.5 }}>계좌 잔고 (USDT)</div>
+                  <input type="number" value={balance} onChange={e => setBalance(e.target.value)} placeholder="예: 1000" style={{ width: "100%", background: C.surface2, border: "1px solid " + C.border, color: C.text, borderRadius: 8, padding: "10px 12px", fontFamily: "'JetBrains Mono',monospace", fontSize: 14 }} />
+                </div>
+                <div>
+                  <div style={{ fontSize: 11, color: C.muted, marginBottom: 5, fontWeight: 600, letterSpacing: 0.5 }}>리스크 % (계좌 대비)</div>
+                  <div style={{ display: "flex", gap: 6 }}>
+                    {["0.5", "1", "1.5", "2", "3"].map(v => (
+                      <button key={v} onClick={() => setRiskPct(v)} style={{ flex: 1, padding: "10px 0", borderRadius: 8, border: "1px solid " + (riskPct === v ? C.yellow : C.border), background: riskPct === v ? C.yellowDim : "transparent", color: riskPct === v ? C.yellow : C.muted, fontSize: 11, fontWeight: 700, cursor: "pointer", fontFamily: "'JetBrains Mono',monospace" }}>{v}%</button>
+                    ))}
+                  </div>
+                </div>
+              </div>
+
+              {/* 계산 결과 */}
+              {entryN > 0 && slN > 0 && (
+                <div style={{ background: C.surface, borderRadius: 10, padding: 14, border: "1px solid " + C.border }}>
+                  <div style={{ fontSize: 11, color: C.muted, marginBottom: 10, fontWeight: 600 }}>📐 계산 결과</div>
+                  <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
+                    {[
+                      ["손익비", rrRatio > 0 ? "1 : " + rrRatio.toFixed(2) : "-", rrRatio >= 2 ? C.accent : rrRatio >= 1 ? C.yellow : C.red],
+                      ["최대 손실", balN > 0 ? "-" + maxLoss.toFixed(2) + " USDT" : "-", C.red],
+                      ["권장 포지션", posSizeUsdt > 0 ? posSizeUsdt.toFixed(2) + " USDT" : "-", C.accent],
+                      ["손절 거리", slDist > 0 ? (slDist * 100).toFixed(2) + "%" : "-", C.muted],
+                    ].map(([label, val, color]) => (
+                      <div key={label} style={{ background: C.surface2, borderRadius: 8, padding: "10px 12px" }}>
+                        <div style={{ fontSize: 10, color: C.muted, marginBottom: 3 }}>{label}</div>
+                        <div style={{ fontFamily: "'JetBrains Mono',monospace", fontSize: 14, fontWeight: 700, color }}>{val}</div>
+                      </div>
+                    ))}
+                  </div>
+                  {rrRatio > 0 && rrRatio < 2 && <div style={{ marginTop: 10, padding: "8px 12px", background: C.redDim, borderRadius: 8, fontSize: 12, color: C.red }}>⚠️ 손익비가 1:2 미만입니다. 목표가를 재검토하거나 진입을 재고하세요.</div>}
+                </div>
+              )}
+            </div>
+          </Card>
+          <div style={{ display: "flex", gap: 10 }}>
+            <button onClick={() => setStep(2)} style={{ flex: 1, padding: "13px 0", borderRadius: 12, border: "1px solid " + C.border, background: "transparent", color: C.muted, fontWeight: 600, fontSize: 14, cursor: "pointer", fontFamily: "'Space Grotesk',sans-serif" }}>← 이전</button>
+            <button onClick={() => setStep(4)} style={{ flex: 2, padding: "13px 0", borderRadius: 12, border: "none", background: C.accent, color: "#000", fontWeight: 700, fontSize: 14, cursor: "pointer", fontFamily: "'Space Grotesk',sans-serif" }}>다음 → 최종 확인</button>
+          </div>
+        </div>
+      )}
+
+      {/* Step 4: 최종 확인 & AI */}
+      {step === 4 && (
+        <div style={{ display: "flex", flexDirection: "column", gap: 16, animation: "fadeUp 0.3s ease" }}>
+          <div>
+            <div style={{ fontSize: 20, fontWeight: 700, marginBottom: 4 }}>최종 확인</div>
+            <div style={{ fontSize: 13, color: C.muted }}>분석을 검토하고 진입 여부를 결정하세요</div>
+          </div>
+
+          {/* 판정 배너 */}
+          <div style={{ padding: 20, borderRadius: 14, border: "2px solid " + (passed ? C.accent : C.red), background: passed ? "rgba(99,255,180,0.05)" : "rgba(255,77,109,0.05)", textAlign: "center", animation: passed ? "glow 3s infinite" : "none" }}>
+            <div style={{ fontSize: 32, marginBottom: 8 }}>{passed ? "🟢" : "🔴"}</div>
+            <div style={{ fontSize: 22, fontWeight: 700, color: passed ? C.accent : C.red }}>{passed ? "진입 허가" : "진입 불가"}</div>
+            <div style={{ fontSize: 13, color: C.muted, marginTop: 4 }}>분석 점수 {score}/{MAX_SCORE}점 (기준 {THRESHOLD}점)</div>
+          </div>
+
+          {/* 요약 */}
+          <Card>
+            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10, fontSize: 13 }}>
+              {[
+                ["종목", symbol === "기타" ? customSymbol : symbol],
+                ["방향", dir, dir === "롱" ? C.long : C.short],
+                ["타임프레임", tf],
+                ["레버리지", lev + "x"],
+                ["진입가", entry ? entry + " USDT" : "-"],
+                ["손절가", sl ? sl + " USDT" : "-"],
+                ["목표가", tp ? tp + " USDT" : "-"],
+                ["손익비", rrRatio > 0 ? "1:" + rrRatio.toFixed(2) : "-", rrRatio >= 2 ? C.accent : C.yellow],
+                ["권장 포지션", posSizeUsdt > 0 ? posSizeUsdt.toFixed(2) + " USDT" : "-"],
+                ["최대 손실", maxLoss > 0 ? maxLoss.toFixed(2) + " USDT" : "-", C.red],
+              ].map(([label, val, color]) => (
+                <div key={label} style={{ background: C.surface2, borderRadius: 8, padding: "10px 12px" }}>
+                  <div style={{ fontSize: 10, color: C.muted, marginBottom: 2 }}>{label}</div>
+                  <div style={{ fontFamily: "'JetBrains Mono',monospace", fontSize: 13, fontWeight: 600, color: color || C.text }}>{val || "-"}</div>
+                </div>
+              ))}
+            </div>
+          </Card>
+
+          {/* 메모 */}
+          <div>
+            <div style={{ fontSize: 11, color: C.muted, marginBottom: 6, fontWeight: 600, letterSpacing: 1 }}>진입 근거 메모 (선택)</div>
+            <textarea value={memo} onChange={e => setMemo(e.target.value)} placeholder="시나리오, 주의할 점, 추가 근거..." style={{ width: "100%", background: C.surface, border: "1px solid " + C.border, color: C.text, borderRadius: 10, padding: "12px 14px", minHeight: 80, resize: "vertical", fontSize: 13 }} />
+          </div>
+
+          {/* AI 분석 */}
+          <Card accent="#7b2fff">
+            <div style={{ fontSize: 12, color: "#b47aff", fontWeight: 700, marginBottom: 10, display: "flex", alignItems: "center", gap: 6 }}>🤖 AI 진입 검토</div>
+            <button onClick={getAiAdvice} disabled={aiLoading} style={{ width: "100%", padding: "11px 0", borderRadius: 10, border: "none", background: "linear-gradient(135deg,#7b2fff,#4da6ff)", color: "#fff", fontWeight: 700, fontSize: 13, cursor: "pointer", fontFamily: "'Space Grotesk',sans-serif", opacity: aiLoading ? 0.7 : 1 }}>
+              {aiLoading ? "분석 중..." : "AI에게 이 진입 검토 요청하기"}
+            </button>
+            {aiAdvice && <div style={{ marginTop: 12, padding: "12px 14px", background: "rgba(123,47,255,0.08)", borderRadius: 10, fontSize: 13, lineHeight: 1.7, whiteSpace: "pre-wrap", color: C.text }}>{aiAdvice}</div>}
+          </Card>
+
+          <div style={{ display: "flex", gap: 10 }}>
+            <button onClick={() => setStep(3)} style={{ flex: 1, padding: "13px 0", borderRadius: 12, border: "1px solid " + C.border, background: "transparent", color: C.muted, fontWeight: 600, fontSize: 14, cursor: "pointer", fontFamily: "'Space Grotesk',sans-serif" }}>← 이전</button>
+            <button onClick={handleComplete} style={{ flex: 2, padding: "13px 0", borderRadius: 12, border: "none", background: passed ? C.accent : C.surface2, color: passed ? "#000" : C.muted, fontWeight: 700, fontSize: 14, cursor: "pointer", fontFamily: "'Space Grotesk',sans-serif" }}>
+              {passed ? "✓ 분석 저장 & 포지션 오픈" : "⚠️ 비허가 상태로 저장"}
+            </button>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ── 포지션 카드 ──────────────────────────────────────────
+function PositionCard({ pos, onClose, onView }) {
+  const [expanded, setExpanded] = useState(false);
+  const pnlColor = pos.status === "win" ? C.accent : pos.status === "loss" ? C.red : C.muted;
+  const dirColor = pos.dir === "롱" ? C.long : C.short;
+  const borderColor = pos.passed ? (pos.status === "active" ? C.blue : pnlColor) : C.border;
+
+  return (
+    <div style={{ background: C.surface, border: "1px solid " + borderColor + (pos.status === "active" ? "80" : "40"), borderRadius: 14, overflow: "hidden", transition: "all 0.2s" }}>
+      <div onClick={() => setExpanded(e => !e)} style={{ padding: "14px 16px", cursor: "pointer", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+        <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+          <div style={{ width: 8, height: 8, borderRadius: "50%", background: pos.status === "active" ? C.accent : pos.status === "win" ? C.accent : C.red, animation: pos.status === "active" ? "pulse 2s infinite" : "none" }} />
+          <div>
+            <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+              <span style={{ fontWeight: 700, fontSize: 16, fontFamily: "'JetBrains Mono',monospace" }}>{pos.symbol}</span>
+              <span style={{ fontSize: 11, padding: "2px 8px", borderRadius: 20, background: dirColor + "20", color: dirColor, fontWeight: 700, border: "1px solid " + dirColor + "40" }}>{pos.dir}</span>
+              <span style={{ fontSize: 10, color: C.muted }}>{pos.lev}x</span>
+              {!pos.passed && <span style={{ fontSize: 10, padding: "1px 6px", borderRadius: 8, background: C.redDim, color: C.red, border: "1px solid " + C.red + "40" }}>비허가</span>}
+            </div>
+            <div style={{ fontSize: 11, color: C.muted, marginTop: 2 }}>{pos.date} · {pos.tf} · 점수 {pos.score}점</div>
+          </div>
+        </div>
+        <div style={{ textAlign: "right" }}>
+          {pos.status !== "active" && pos.realPnl !== undefined
+            ? <div style={{ fontFamily: "'JetBrains Mono',monospace", fontSize: 15, fontWeight: 700, color: pnlColor }}>{pos.realPnl >= 0 ? "+" : ""}{pos.realPnl.toFixed(2)} USDT</div>
+            : pos.entry && <div style={{ fontFamily: "'JetBrains Mono',monospace", fontSize: 13, color: C.muted }}>@ {pos.entry}</div>
+          }
+          <div style={{ fontSize: 10, color: C.muted }}>{expanded ? "▲" : "▼"}</div>
+        </div>
+      </div>
+
+      {expanded && (
+        <div style={{ padding: "0 16px 14px", borderTop: "1px solid " + C.border }}>
+          <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 8, marginTop: 12, marginBottom: 12 }}>
+            {[["진입가", pos.entry ? pos.entry + " USDT" : "-"], ["손절가", pos.sl ? pos.sl + " USDT" : "-"], ["목표가", pos.tp ? pos.tp + " USDT" : "-"], ["손익비", pos.rrRatio ? "1:" + pos.rrRatio : "-"], ["포지션", pos.posSizeUsdt ? pos.posSizeUsdt + " USDT" : "-"], ["최대손실", pos.maxLoss ? pos.maxLoss + " USDT" : "-"]].map(([label, val]) => (
+              <div key={label} style={{ background: C.surface2, borderRadius: 8, padding: "8px 10px" }}>
+                <div style={{ fontSize: 9, color: C.muted, marginBottom: 2 }}>{label}</div>
+                <div style={{ fontFamily: "'JetBrains Mono',monospace", fontSize: 12, fontWeight: 600 }}>{val}</div>
+              </div>
+            ))}
+          </div>
+          {pos.memo && <div style={{ padding: "8px 12px", background: C.surface2, borderRadius: 8, fontSize: 12, color: C.muted, marginBottom: 12, lineHeight: 1.5 }}>{pos.memo}</div>}
+          <div style={{ display: "flex", gap: 8 }}>
+            <button onClick={() => onView(pos)} style={{ flex: 1, padding: "9px 0", borderRadius: 9, border: "1px solid " + C.border, background: "transparent", color: C.muted, fontSize: 12, fontWeight: 600, cursor: "pointer", fontFamily: "'Space Grotesk',sans-serif" }}>상세 보기</button>
+            {pos.status === "active" && <button onClick={() => onClose(pos)} style={{ flex: 2, padding: "9px 0", borderRadius: 9, border: "none", background: C.accent, color: "#000", fontSize: 12, fontWeight: 700, cursor: "pointer", fontFamily: "'Space Grotesk',sans-serif" }}>청산 기록하기</button>}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ── 청산 모달 ─────────────────────────────────────────────
+function CloseModal({ pos, onSave, onCancel }) {
+  const [exitPrice, setExitPrice] = useState("");
+  const [exitMemo, setExitMemo] = useState("");
+
+  const entryN = parseFloat(pos.entry) || 0;
+  const exitN = parseFloat(exitPrice) || 0;
+  const posSize = parseFloat(pos.posSizeUsdt) || 0;
+  const levN = parseFloat(pos.lev) || 1;
+  const pnl = entryN > 0 && exitN > 0 && posSize > 0
+    ? (pos.dir === "숏" ? (entryN - exitN) / entryN : (exitN - entryN) / entryN) * posSize * levN : 0;
+  const pct = entryN > 0 && exitN > 0 ? (pos.dir === "숏" ? (entryN - exitN) / entryN : (exitN - entryN) / entryN) * 100 * levN : 0;
+
+  return (
+    <div onClick={onCancel} style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.8)", zIndex: 1000, display: "flex", alignItems: "center", justifyContent: "center", padding: 24 }}>
+      <div onClick={e => e.stopPropagation()} style={{ background: C.surface, border: "1px solid " + C.border, borderRadius: 16, padding: 24, width: "100%", maxWidth: 400 }}>
+        <div style={{ fontSize: 18, fontWeight: 700, marginBottom: 16 }}>{pos.symbol} 청산 기록</div>
+        <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+          <div>
+            <div style={{ fontSize: 11, color: C.muted, marginBottom: 6, fontWeight: 600 }}>청산가 (USDT)</div>
+            <input type="number" value={exitPrice} onChange={e => setExitPrice(e.target.value)} placeholder="청산한 가격" style={{ width: "100%", background: C.surface2, border: "1px solid " + C.border, color: C.text, borderRadius: 10, padding: "12px 14px", fontFamily: "'JetBrains Mono',monospace", fontSize: 15 }} />
+          </div>
+          {exitN > 0 && entryN > 0 && (
+            <div style={{ padding: 14, background: pnl >= 0 ? "rgba(99,255,180,0.06)" : "rgba(255,77,109,0.06)", border: "1px solid " + (pnl >= 0 ? C.accent + "40" : C.red + "40"), borderRadius: 10, display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
+              <div><div style={{ fontSize: 10, color: C.muted }}>실현 손익</div><div style={{ fontFamily: "'JetBrains Mono',monospace", fontSize: 18, fontWeight: 700, color: pnl >= 0 ? C.accent : C.red }}>{pnl >= 0 ? "+" : ""}{pnl.toFixed(2)} USDT</div></div>
+              <div><div style={{ fontSize: 10, color: C.muted }}>수익률</div><div style={{ fontFamily: "'JetBrains Mono',monospace", fontSize: 18, fontWeight: 700, color: pct >= 0 ? C.accent : C.red }}>{pct >= 0 ? "+" : ""}{pct.toFixed(2)}%</div></div>
+            </div>
+          )}
+          <div>
+            <div style={{ fontSize: 11, color: C.muted, marginBottom: 6, fontWeight: 600 }}>복기 메모 (선택)</div>
+            <textarea value={exitMemo} onChange={e => setExitMemo(e.target.value)} placeholder="왜 청산했나요? 잘한 점, 개선할 점..." style={{ width: "100%", background: C.surface2, border: "1px solid " + C.border, color: C.text, borderRadius: 10, padding: "10px 14px", minHeight: 70, resize: "vertical", fontSize: 13 }} />
+          </div>
+        </div>
+        <div style={{ display: "flex", gap: 10, marginTop: 16 }}>
+          <button onClick={onCancel} style={{ flex: 1, padding: "12px 0", borderRadius: 10, border: "1px solid " + C.border, background: "transparent", color: C.muted, fontWeight: 600, cursor: "pointer", fontFamily: "'Space Grotesk',sans-serif" }}>취소</button>
+          <button onClick={() => onSave({ exitPrice: exitN, exitMemo, realPnl: Math.round(pnl * 100) / 100, realPct: Math.round(pct * 100) / 100, exitDate: todayStr(), status: pnl >= 0 ? "win" : "loss" })} disabled={!exitN} style={{ flex: 2, padding: "12px 0", borderRadius: 10, border: "none", background: C.accent, color: "#000", fontWeight: 700, cursor: "pointer", fontFamily: "'Space Grotesk',sans-serif", opacity: !exitN ? 0.5 : 1 }}>저장</button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ── 통계 탭 ──────────────────────────────────────────────
+function StatsView({ positions }) {
+  const closed = positions.filter(p => p.status !== "active");
+  const wins = closed.filter(p => p.status === "win");
+  const losses = closed.filter(p => p.status === "loss");
+  const wr = closed.length ? Math.round(wins.length / closed.length * 100) : 0;
+  const totalPnl = closed.reduce((a, p) => a + (p.realPnl || 0), 0);
+  const avgPnl = closed.length ? totalPnl / closed.length : 0;
+
+  // 허가/비허가 비교
+  const permitted = closed.filter(p => p.passed);
+  const notPermitted = closed.filter(p => !p.passed);
+  const permWr = permitted.length ? Math.round(permitted.filter(p => p.status === "win").length / permitted.length * 100) : 0;
+  const notPermWr = notPermitted.length ? Math.round(notPermitted.filter(p => p.status === "win").length / notPermitted.length * 100) : 0;
+
+  // 누적 손익
+  const cumData = [];
+  let running = 0;
+  [...closed].sort((a, b) => new Date(a.exitDate || a.date) - new Date(b.exitDate || b.date)).forEach((p, i) => {
+    running += p.realPnl || 0;
+    cumData.push({ x: i + 1, y: running });
+  });
+
+  if (!closed.length) return (
+    <Card style={{ textAlign: "center", padding: 40 }}>
+      <div style={{ fontSize: 32, marginBottom: 12 }}>📊</div>
+      <div style={{ color: C.muted, fontSize: 14 }}>청산된 포지션이 없습니다</div>
+    </Card>
+  );
+
+  return (
+    <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
+      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
+        {[
+          ["승률", wr + "%", wr >= 50 ? C.accent : C.red],
+          ["총 손익", (totalPnl >= 0 ? "+" : "") + totalPnl.toFixed(2) + " USDT", totalPnl >= 0 ? C.accent : C.red],
+          ["청산 거래", closed.length + "건", C.text],
+          ["평균 손익", (avgPnl >= 0 ? "+" : "") + avgPnl.toFixed(2) + " USDT", avgPnl >= 0 ? C.accent : C.red],
+        ].map(([label, val, color]) => (
+          <Card key={label}>
+            <div style={{ fontSize: 11, color: C.muted, marginBottom: 6 }}>{label}</div>
+            <div style={{ fontFamily: "'JetBrains Mono',monospace", fontSize: 22, fontWeight: 700, color }}>{val}</div>
+          </Card>
+        ))}
+      </div>
+
+      {/* 허가 vs 비허가 비교 */}
+      {(permitted.length > 0 || notPermitted.length > 0) && (
+        <Card accent={C.accent}>
+          <div style={{ fontSize: 12, color: C.accent, fontWeight: 700, marginBottom: 14 }}>⚡ 체크리스트 효과 분석</div>
+          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
+            <div style={{ padding: 14, background: "rgba(99,255,180,0.06)", borderRadius: 10, border: "1px solid " + C.accent + "30" }}>
+              <div style={{ fontSize: 11, color: C.accent, fontWeight: 700, marginBottom: 8 }}>🟢 허가 진입 ({permitted.length}건)</div>
+              <div style={{ fontFamily: "'JetBrains Mono',monospace", fontSize: 24, fontWeight: 700, color: permWr >= 50 ? C.accent : C.red }}>{permWr}%</div>
+              <div style={{ fontSize: 11, color: C.muted }}>승률</div>
+            </div>
+            <div style={{ padding: 14, background: C.redDim, borderRadius: 10, border: "1px solid " + C.red + "30" }}>
+              <div style={{ fontSize: 11, color: C.red, fontWeight: 700, marginBottom: 8 }}>🔴 비허가 진입 ({notPermitted.length}건)</div>
+              <div style={{ fontFamily: "'JetBrains Mono',monospace", fontSize: 24, fontWeight: 700, color: notPermWr >= 50 ? C.accent : C.red }}>{notPermWr}%</div>
+              <div style={{ fontSize: 11, color: C.muted }}>승률</div>
+            </div>
+          </div>
+          {permitted.length > 0 && notPermitted.length > 0 && (
+            <div style={{ marginTop: 12, padding: "10px 14px", background: C.surface2, borderRadius: 10, fontSize: 13, color: permWr > notPermWr ? C.accent : C.muted }}>
+              {permWr > notPermWr ? `✓ 허가 진입 승률이 ${permWr - notPermWr}% 더 높습니다. 체크리스트가 효과적이에요!` : permWr === notPermWr ? "허가/비허가 승률이 같습니다. 데이터가 더 필요해요." : `⚠️ 아직 데이터가 부족합니다. 계속 기록해보세요.`}
+            </div>
+          )}
+        </Card>
+      )}
+
+      {/* 누적 손익 SVG 차트 */}
+      {cumData.length > 1 && (
+        <Card>
+          <div style={{ fontSize: 12, color: C.muted, marginBottom: 12, fontWeight: 600 }}>📈 누적 손익 추이</div>
+          <svg width="100%" height="120" viewBox={`0 0 300 120`} preserveAspectRatio="none">
+            {(() => {
+              const maxY = Math.max(...cumData.map(d => Math.abs(d.y)));
+              const minY = Math.min(...cumData.map(d => d.y));
+              const scaleY = maxY > 0 ? (maxY + Math.abs(minY) > 0 ? 80 / (maxY - Math.min(...cumData.map(d => d.y))) : 1) : 1;
+              const points = cumData.map((d, i) => `${i / (cumData.length - 1) * 280 + 10},${100 - (d.y - Math.min(...cumData.map(d => d.y))) * scaleY}`).join(" ");
+              const lastPnl = cumData[cumData.length - 1]?.y || 0;
+              return <polyline points={points} fill="none" stroke={lastPnl >= 0 ? C.accent : C.red} strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" />;
+            })()}
+          </svg>
+        </Card>
+      )}
+    </div>
+  );
+}
+
+// ── 메인 앱 ──────────────────────────────────────────────
+export default function App() {
+  const [tab, setTab] = useState("positions");
+  const [positions, setPositions] = useState([]);
+  const [loaded, setLoaded] = useState(false);
+  const [showWizard, setShowWizard] = useState(false);
+  const [closeTarget, setCloseTarget] = useState(null);
+  const [detailPos, setDetailPos] = useState(null);
+
+  useEffect(() => {
+    const load = async () => {
+      try {
+        const d = await loadData("positions");
+        if (d) setPositions(typeof d === "string" ? JSON.parse(d) : d);
+      } catch (e) {}
+      setLoaded(true);
+    };
+    load();
+  }, []);
+
+  const save = async (newPositions) => {
+    setPositions(newPositions);
+    try { await saveData("positions", JSON.stringify(newPositions)); } catch (e) {}
+  };
+
+  const handleComplete = (data) => {
+    save([data, ...positions]);
+    setShowWizard(false);
+  };
+
+  const handleClose = async (result) => {
+    const updated = positions.map(p => p.id === closeTarget.id ? { ...p, ...result } : p);
+    await save(updated);
+    setCloseTarget(null);
+  };
+
+  const deletePos = async (id) => {
+    await save(positions.filter(p => p.id !== id));
+  };
+
+  const active = positions.filter(p => p.status === "active");
+  const closed = positions.filter(p => p.status !== "active");
+
+  if (!loaded) return (
+    <div style={{ background: C.bg, minHeight: "100vh", display: "flex", alignItems: "center", justifyContent: "center", flexDirection: "column", gap: 12 }}>
+      <style>{CSS}</style>
+      <div style={{ width: 32, height: 32, border: "3px solid " + C.surface2, borderTopColor: C.accent, borderRadius: "50%", animation: "spin 0.8s linear infinite" }} />
+      <div style={{ color: C.muted, fontSize: 13 }}>TradeGate 로딩 중...</div>
+    </div>
+  );
+
+  return (
+    <div style={{ background: C.bg, minHeight: "100vh", color: C.text, fontFamily: "'Space Grotesk',sans-serif", maxWidth: 600, margin: "0 auto" }}>
+      <style>{CSS}</style>
+
+      {/* 헤더 */}
+      <div style={{ padding: "20px 20px 0", borderBottom: "1px solid " + C.border, background: C.surface, position: "sticky", top: 0, zIndex: 50 }}>
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 16 }}>
+          <div>
+            <div style={{ fontSize: 22, fontWeight: 700, letterSpacing: -0.5 }}>TradeGate <span style={{ fontSize: 12, color: C.muted, fontWeight: 400 }}>코인 선물</span></div>
+            <div style={{ fontSize: 11, color: C.muted, marginTop: 2 }}>포지션 {active.length}개 진행 중</div>
+          </div>
+          {!showWizard && (
+            <button onClick={() => setShowWizard(true)} style={{ padding: "10px 18px", borderRadius: 10, border: "none", background: C.accent, color: "#000", fontWeight: 700, fontSize: 13, cursor: "pointer", fontFamily: "'Space Grotesk',sans-serif" }}>+ 새 분석</button>
+          )}
+        </div>
+        {!showWizard && (
+          <div style={{ display: "flex", gap: 0 }}>
+            {[["positions", "포지션"], ["history", "기록"], ["stats", "통계"]].map(([id, label]) => (
+              <button key={id} onClick={() => setTab(id)} style={{ flex: 1, padding: "10px 0", background: "none", border: "none", borderBottom: "2px solid " + (tab === id ? C.accent : "transparent"), color: tab === id ? C.accent : C.muted, fontWeight: tab === id ? 700 : 400, fontSize: 13, cursor: "pointer", fontFamily: "'Space Grotesk',sans-serif" }}>{label}</button>
+            ))}
+          </div>
+        )}
+      </div>
+
+      {/* 컨텐츠 */}
+      <div style={{ padding: "20px 16px", paddingBottom: 40 }}>
+        {showWizard ? (
+          <AnalysisWizard onComplete={handleComplete} onCancel={() => setShowWizard(false)} />
+        ) : tab === "positions" ? (
+          <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+            {active.length === 0 ? (
+              <Card style={{ textAlign: "center", padding: 40 }}>
+                <div style={{ fontSize: 40, marginBottom: 12 }}>🚪</div>
+                <div style={{ fontSize: 16, fontWeight: 600, marginBottom: 6 }}>열린 포지션 없음</div>
+                <div style={{ fontSize: 13, color: C.muted, marginBottom: 20 }}>분석을 통과해야 진입할 수 있습니다</div>
+                <button onClick={() => setShowWizard(true)} style={{ padding: "12px 24px", borderRadius: 10, border: "none", background: C.accent, color: "#000", fontWeight: 700, fontSize: 14, cursor: "pointer", fontFamily: "'Space Grotesk',sans-serif" }}>새 분석 시작하기</button>
+              </Card>
+            ) : (
+              active.map(p => <PositionCard key={p.id} pos={p} onClose={setCloseTarget} onView={setDetailPos} />)
+            )}
+          </div>
+        ) : tab === "history" ? (
+          <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+            {closed.length === 0
+              ? <Card style={{ textAlign: "center", padding: 40 }}><div style={{ color: C.muted, fontSize: 14 }}>청산된 포지션이 없습니다</div></Card>
+              : closed.map(p => <PositionCard key={p.id} pos={p} onClose={setCloseTarget} onView={setDetailPos} />)
+            }
+          </div>
+        ) : (
+          <StatsView positions={positions} />
+        )}
+      </div>
+
+      {/* 청산 모달 */}
+      {closeTarget && <CloseModal pos={closeTarget} onSave={handleClose} onCancel={() => setCloseTarget(null)} />}
+
+      {/* 상세 모달 */}
+      {detailPos && (
+        <div onClick={() => setDetailPos(null)} style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.8)", zIndex: 1000, display: "flex", alignItems: "flex-end", justifyContent: "center", padding: "0 0 0 0" }}>
+          <div onClick={e => e.stopPropagation()} style={{ background: C.surface, border: "1px solid " + C.border, borderRadius: "16px 16px 0 0", padding: 24, width: "100%", maxWidth: 600, maxHeight: "85vh", overflowY: "auto" }}>
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 16 }}>
+              <div style={{ fontWeight: 700, fontSize: 18 }}>{detailPos.symbol} 분석 상세</div>
+              <button onClick={() => setDetailPos(null)} style={{ background: C.surface2, border: "1px solid " + C.border, color: C.text, width: 30, height: 30, borderRadius: "50%", cursor: "pointer" }}>✕</button>
+            </div>
+            <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+              {/* 체크된 항목 */}
+              <div style={{ fontSize: 12, color: C.muted, fontWeight: 600 }}>충족된 조건</div>
+              {ALL_ITEMS.filter(i => detailPos.checked?.[i.id]).map(item => (
+                <div key={item.id} style={{ padding: "8px 12px", background: C.accentDim, borderRadius: 8, fontSize: 13, color: C.accent, display: "flex", justifyContent: "space-between" }}>
+                  <span>✓ {item.label}</span>
+                  <span style={{ fontFamily: "'JetBrains Mono',monospace" }}>+{item.score}점</span>
+                </div>
+              ))}
+              {detailPos.memo && <div style={{ padding: "10px 12px", background: C.surface2, borderRadius: 8, fontSize: 13, color: C.muted }}>{detailPos.memo}</div>}
+              {detailPos.aiAdvice && (
+                <div style={{ padding: "12px 14px", background: "rgba(123,47,255,0.08)", border: "1px solid rgba(123,47,255,0.2)", borderRadius: 10, fontSize: 13, lineHeight: 1.7 }}>
+                  <div style={{ fontSize: 11, color: "#b47aff", fontWeight: 700, marginBottom: 6 }}>🤖 AI 분석</div>
+                  {detailPos.aiAdvice}
+                </div>
+              )}
+              {detailPos.exitMemo && (
+                <div style={{ padding: "12px 14px", background: C.surface2, borderRadius: 10, fontSize: 13 }}>
+                  <div style={{ fontSize: 11, color: C.muted, fontWeight: 600, marginBottom: 4 }}>복기 메모</div>
+                  {detailPos.exitMemo}
+                </div>
+              )}
+              <button onClick={() => { if (confirm("이 포지션을 삭제할까요?")) { deletePos(detailPos.id); setDetailPos(null); } }} style={{ padding: "10px 0", borderRadius: 10, border: "1px solid " + C.red + "40", background: C.redDim, color: C.red, fontWeight: 600, fontSize: 13, cursor: "pointer", fontFamily: "'Space Grotesk',sans-serif" }}>삭제</button>
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
