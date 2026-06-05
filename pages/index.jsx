@@ -142,6 +142,9 @@ function AnalysisWizard({ onComplete, onCancel, initialData, checklist }) {
   const [memo, setMemo] = useState(initialData?.memo || "");
   const [aiLoading, setAiLoading] = useState(false);
   const [aiAdvice, setAiAdvice] = useState("");
+  const [fillType, setFillType] = useState("full"); // "full" | "partial" | "unfilled"
+  const [targetQty, setTargetQty] = useState(""); // 목표 수량
+  const [filledQty, setFilledQty] = useState(""); // 실제 체결 수량
   const fileRef = useRef();
 
   const addImages = (files) => {
@@ -202,7 +205,27 @@ function AnalysisWizard({ onComplete, onCancel, initialData, checklist }) {
 
   const handleComplete = () => {
     const finalSymbol = symbol === "기타" ? customSymbol : symbol;
-    onComplete({ symbol: finalSymbol, dir, checked, entry, sl, tp, lev, balance, riskPct, memo, score, passed, rrRatio: Math.round(rrRatio * 100) / 100, posSizeUsdt: Math.round(posSizeUsdt * 100) / 100, maxLoss: Math.round(maxLoss * 100) / 100, aiAdvice, date: todayStr(), id: Date.now(), status: "active", images });
+    const filledN = parseFloat(filledQty) || 0;
+    const targetN = parseFloat(targetQty) || 0;
+    // 미체결 시뮬레이션 계산
+    const simWin = entryN > 0 && tpN > 0 && targetN > 0
+      ? (dir === "숏" ? (entryN - tpN) : (tpN - entryN)) / entryN * targetN * entryN * levN : 0;
+    const simLoss = entryN > 0 && slN > 0 && targetN > 0
+      ? (dir === "숏" ? (entryN - slN) : (slN - entryN)) / entryN * targetN * entryN * levN : 0;
+    onComplete({
+      symbol: finalSymbol, dir, checked, entry, sl, tp, lev, balance, riskPct, memo,
+      score, passed, rrRatio: Math.round(rrRatio * 100) / 100,
+      posSizeUsdt: Math.round(posSizeUsdt * 100) / 100,
+      maxLoss: Math.round(maxLoss * 100) / 100,
+      aiAdvice, date: todayStr(), id: Date.now(),
+      fillType, // "full" | "partial" | "unfilled"
+      targetQty: targetN || null,
+      filledQty: fillType === "partial" ? filledN : fillType === "full" ? targetN : 0,
+      simWin: Math.round(simWin * 100) / 100,
+      simLoss: Math.round(simLoss * 100) / 100,
+      status: fillType === "unfilled" ? "unfilled" : "active",
+      images
+    });
   };
 
   // 이미지 상단 고정 컴포넌트
@@ -405,6 +428,58 @@ function AnalysisWizard({ onComplete, onCancel, initialData, checklist }) {
               )}
             </div>
           </Card>
+
+          {/* 체결 상태 */}
+          <Card accent={C.blue}>
+            <div style={{ fontSize: 12, color: C.blue, fontWeight: 700, marginBottom: 12 }}>⚡ 체결 상태</div>
+            <div style={{ display: "flex", gap: 8, marginBottom: 14 }}>
+              {[["full", "완전 체결", C.accent], ["partial", "부분 체결", C.yellow], ["unfilled", "미체결", C.red]].map(([key, label, color]) => (
+                <button key={key} onClick={() => setFillType(key)} style={{ flex: 1, padding: "10px 0", borderRadius: 10, border: "2px solid " + (fillType === key ? color : C.border), background: fillType === key ? color + "18" : "transparent", color: fillType === key ? color : C.muted, fontWeight: 700, fontSize: 12, cursor: "pointer", fontFamily: "'Space Grotesk',sans-serif" }}>{label}</button>
+              ))}
+            </div>
+            <div style={{ display: "grid", gridTemplateColumns: fillType === "partial" ? "1fr 1fr" : "1fr", gap: 10 }}>
+              <div>
+                <div style={{ fontSize: 11, color: C.muted, marginBottom: 5, fontWeight: 600 }}>목표 수량 (계약)</div>
+                <input type="number" value={targetQty} onChange={e => setTargetQty(e.target.value)} placeholder="예: 0.1" style={{ width: "100%", background: C.surface2, border: "1px solid " + C.border, color: C.text, borderRadius: 8, padding: "10px 12px", fontFamily: "'JetBrains Mono',monospace", fontSize: 14 }} />
+              </div>
+              {fillType === "partial" && (
+                <div>
+                  <div style={{ fontSize: 11, color: C.yellow, marginBottom: 5, fontWeight: 600 }}>실제 체결 수량</div>
+                  <input type="number" value={filledQty} onChange={e => setFilledQty(e.target.value)} placeholder="예: 0.05" style={{ width: "100%", background: C.surface2, border: "1px solid " + C.yellow + "60", color: C.text, borderRadius: 8, padding: "10px 12px", fontFamily: "'JetBrains Mono',monospace", fontSize: 14 }} />
+                </div>
+              )}
+            </div>
+            {fillType === "partial" && targetQty && filledQty && (
+              <div style={{ marginTop: 10, padding: "10px 14px", background: C.yellowDim, borderRadius: 8, border: "1px solid " + C.yellow + "40", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                <span style={{ fontSize: 12, color: C.muted }}>체결률</span>
+                <span style={{ fontFamily: "'JetBrains Mono',monospace", fontSize: 14, fontWeight: 700, color: C.yellow }}>
+                  {Math.round(parseFloat(filledQty) / parseFloat(targetQty) * 100)}%
+                  <span style={{ fontSize: 11, color: C.muted, fontWeight: 400 }}> ({filledQty}/{targetQty})</span>
+                </span>
+              </div>
+            )}
+            {fillType === "unfilled" && entryN > 0 && slN > 0 && tpN > 0 && targetQty && (() => {
+              const tQty = parseFloat(targetQty);
+              const simW = Math.round((dir === "숏" ? (entryN - tpN) : (tpN - entryN)) / entryN * tQty * entryN * levN * 100) / 100;
+              const simL = Math.round((dir === "숏" ? (entryN - slN) : (slN - entryN)) / entryN * tQty * entryN * levN * 100) / 100;
+              return (
+                <div style={{ marginTop: 10, padding: "12px 14px", background: "rgba(77,166,255,0.05)", borderRadius: 8, border: "1px solid " + C.blue + "30" }}>
+                  <div style={{ fontSize: 11, color: C.blue, fontWeight: 600, marginBottom: 8 }}>📊 만약 체결됐다면?</div>
+                  <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8 }}>
+                    <div style={{ padding: "8px 10px", background: "rgba(99,255,180,0.08)", borderRadius: 8 }}>
+                      <div style={{ fontSize: 10, color: C.muted, marginBottom: 2 }}>목표가 달성 시</div>
+                      <div style={{ fontFamily: "'JetBrains Mono',monospace", fontSize: 14, fontWeight: 700, color: C.accent }}>{simW >= 0 ? "+" : ""}{simW} USDT</div>
+                    </div>
+                    <div style={{ padding: "8px 10px", background: "rgba(255,77,109,0.08)", borderRadius: 8 }}>
+                      <div style={{ fontSize: 10, color: C.muted, marginBottom: 2 }}>손절 시</div>
+                      <div style={{ fontFamily: "'JetBrains Mono',monospace", fontSize: 14, fontWeight: 700, color: C.red }}>{simL >= 0 ? "+" : ""}{simL} USDT</div>
+                    </div>
+                  </div>
+                </div>
+              );
+            })()}
+          </Card>
+
           <div style={{ display: "flex", gap: 10 }}>
             <button onClick={() => setStep(3)} style={{ flex: 1, padding: "13px 0", borderRadius: 12, border: "1px solid " + C.border, background: "transparent", color: C.muted, fontWeight: 600, fontSize: 14, cursor: "pointer", fontFamily: "'Space Grotesk',sans-serif" }}>← 이전</button>
             <button onClick={() => setStep(5)} style={{ flex: 2, padding: "13px 0", borderRadius: 12, border: "none", background: C.accent, color: "#000", fontWeight: 700, fontSize: 14, cursor: "pointer", fontFamily: "'Space Grotesk',sans-serif" }}>다음 → 최종 확인</button>
@@ -479,25 +554,30 @@ function AnalysisWizard({ onComplete, onCancel, initialData, checklist }) {
 }
 
 // ── 포지션 카드 ──────────────────────────────────────────
-function PositionCard({ pos, onClose, onView }) {
+function PositionCard({ pos, onClose, onView, onUpdateQty }) {
   const [expanded, setExpanded] = useState(false);
+  const [addQtyInput, setAddQtyInput] = useState("");
   const pnlColor = pos.status === "win" ? C.accent : pos.status === "loss" ? C.red : C.muted;
   const dirColor = pos.dir === "롱" ? C.long : C.short;
-  const borderColor = pos.passed ? (pos.status === "active" ? C.blue : pnlColor) : C.border;
+  const isUnfilled = pos.fillType === "unfilled" || pos.status === "unfilled";
+  const isPartial = pos.fillType === "partial" && pos.status === "active";
+  const borderColor = isUnfilled ? C.muted : isPartial ? C.yellow : pos.passed ? (pos.status === "active" ? C.blue : pnlColor) : C.border;
 
   return (
     <div style={{ background: C.surface, border: "1px solid " + borderColor + (pos.status === "active" ? "80" : "40"), borderRadius: 14, overflow: "hidden", transition: "all 0.2s" }}>
       <div onClick={() => setExpanded(e => !e)} style={{ padding: "14px 16px", cursor: "pointer", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
         <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-          <div style={{ width: 8, height: 8, borderRadius: "50%", background: pos.status === "active" ? C.accent : pos.status === "win" ? C.accent : C.red, animation: pos.status === "active" ? "pulse 2s infinite" : "none" }} />
+              <div style={{ width: 8, height: 8, borderRadius: "50%", background: isUnfilled ? C.muted : isPartial ? C.yellow : (pos.status === "active" ? C.accent : pos.status === "win" ? C.accent : C.red), animation: (pos.status === "active" && !isUnfilled) ? "pulse 2s infinite" : "none" }} />
           <div>
             <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
               <span style={{ fontWeight: 700, fontSize: 16, fontFamily: "'JetBrains Mono',monospace" }}>{pos.symbol}</span>
               <span style={{ fontSize: 11, padding: "2px 8px", borderRadius: 20, background: dirColor + "20", color: dirColor, fontWeight: 700, border: "1px solid " + dirColor + "40" }}>{pos.dir}</span>
               <span style={{ fontSize: 10, color: C.muted }}>{pos.lev}x</span>
+                  {isUnfilled && <span style={{ fontSize: 10, padding: "1px 6px", borderRadius: 8, background: "rgba(90,96,128,0.2)", color: C.muted, border: "1px solid " + C.border }}>미체결</span>}
+                  {isPartial && <span style={{ fontSize: 10, padding: "1px 6px", borderRadius: 8, background: C.yellowDim, color: C.yellow, border: "1px solid " + C.yellow + "40" }}>부분체결</span>}
               {!pos.passed && <span style={{ fontSize: 10, padding: "1px 6px", borderRadius: 8, background: C.redDim, color: C.red, border: "1px solid " + C.red + "40" }}>비허가</span>}
             </div>
-            <div style={{ fontSize: 11, color: C.muted, marginTop: 2 }}>{pos.date} · {pos.tf} · 점수 {pos.score}점</div>
+                <div style={{ fontSize: 11, color: C.muted, marginTop: 2 }}>{pos.date} · 점수 {pos.score}점{isPartial && pos.filledQty && pos.targetQty ? <span style={{ color: C.yellow }}> · {pos.filledQty}/{pos.targetQty} 체결</span> : null}</div>
           </div>
         </div>
         <div style={{ textAlign: "right" }}>
@@ -531,9 +611,39 @@ function PositionCard({ pos, onClose, onView }) {
             ))}
           </div>
           {pos.memo && <div style={{ padding: "8px 12px", background: C.surface2, borderRadius: 8, fontSize: 12, color: C.muted, marginBottom: 12, lineHeight: 1.5 }}>{pos.memo}</div>}
+
+          {/* 미체결 시뮬레이션 */}
+          {isUnfilled && (pos.simWin !== undefined || pos.simLoss !== undefined) && (
+            <div style={{ padding: "12px 14px", background: "rgba(77,166,255,0.06)", borderRadius: 10, border: "1px solid " + C.blue + "30", marginBottom: 12 }}>
+              <div style={{ fontSize: 11, color: C.blue, fontWeight: 600, marginBottom: 8 }}>📊 체결됐다면?</div>
+              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8 }}>
+                <div style={{ padding: "8px 10px", background: "rgba(99,255,180,0.08)", borderRadius: 8 }}>
+                  <div style={{ fontSize: 10, color: C.muted, marginBottom: 2 }}>목표가 달성 시</div>
+                  <div style={{ fontFamily: "'JetBrains Mono',monospace", fontSize: 14, fontWeight: 700, color: C.accent }}>+{pos.simWin} USDT</div>
+                </div>
+                <div style={{ padding: "8px 10px", background: "rgba(255,77,109,0.08)", borderRadius: 8 }}>
+                  <div style={{ fontSize: 10, color: C.muted, marginBottom: 2 }}>손절 시</div>
+                  <div style={{ fontFamily: "'JetBrains Mono',monospace", fontSize: 14, fontWeight: 700, color: C.red }}>{pos.simLoss} USDT</div>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* 부분 체결 — 추가 체결 수량 입력 */}
+          {isPartial && (
+            <div style={{ padding: "12px 14px", background: C.yellowDim, borderRadius: 10, border: "1px solid " + C.yellow + "40", marginBottom: 12 }}>
+              <div style={{ fontSize: 11, color: C.yellow, fontWeight: 600, marginBottom: 8 }}>+ 추가 체결 수량 합산</div>
+              <div style={{ display: "flex", gap: 8 }}>
+                <input type="number" value={addQtyInput} onChange={e => setAddQtyInput(e.target.value)} placeholder="추가 체결된 수량" style={{ flex: 1, background: C.surface, border: "1px solid " + C.yellow + "50", color: C.text, borderRadius: 8, padding: "8px 10px", fontFamily: "'JetBrains Mono',monospace", fontSize: 13 }} />
+                <button onClick={() => { if (parseFloat(addQtyInput) > 0) { onUpdateQty(pos.id, parseFloat(addQtyInput)); setAddQtyInput(""); } }} style={{ padding: "8px 14px", borderRadius: 8, border: "none", background: C.yellow, color: "#000", fontWeight: 700, fontSize: 12, cursor: "pointer", fontFamily: "'Space Grotesk',sans-serif" }}>합산</button>
+              </div>
+              <div style={{ fontSize: 11, color: C.yellow, marginTop: 6 }}>현재 {pos.filledQty} / 목표 {pos.targetQty} 계약</div>
+            </div>
+          )}
+
           <div style={{ display: "flex", gap: 8 }}>
             <button onClick={() => onView(pos)} style={{ flex: 1, padding: "9px 0", borderRadius: 9, border: "1px solid " + C.border, background: "transparent", color: C.muted, fontSize: 12, fontWeight: 600, cursor: "pointer", fontFamily: "'Space Grotesk',sans-serif" }}>상세 보기</button>
-            {pos.status === "active" && <button onClick={() => onClose(pos)} style={{ flex: 2, padding: "9px 0", borderRadius: 9, border: "none", background: C.accent, color: "#000", fontSize: 12, fontWeight: 700, cursor: "pointer", fontFamily: "'Space Grotesk',sans-serif" }}>청산 기록하기</button>}
+            {(pos.status === "active") && <button onClick={() => onClose(pos)} style={{ flex: 2, padding: "9px 0", borderRadius: 9, border: "none", background: C.accent, color: "#000", fontSize: 12, fontWeight: 700, cursor: "pointer", fontFamily: "'Space Grotesk',sans-serif" }}>청산 기록하기</button>}
           </div>
         </div>
       )}
@@ -984,6 +1094,16 @@ export default function App() {
     setCloseTarget(null);
   };
 
+  const handleUpdateQty = async (id, addedQty) => {
+    const updated = positions.map(p => {
+      if (p.id !== id) return p;
+      const newFilled = (parseFloat(p.filledQty) || 0) + addedQty;
+      const isFull = p.targetQty && newFilled >= parseFloat(p.targetQty);
+      return { ...p, filledQty: Math.round(newFilled * 10000) / 10000, fillType: isFull ? "full" : "partial" };
+    });
+    await save(updated);
+  };
+
   const deletePos = async (id) => {
     await save(positions.filter(p => p.id !== id));
   };
@@ -1070,17 +1190,62 @@ export default function App() {
         {showWizard ? (
           <AnalysisWizard onComplete={handleComplete} onCancel={() => setShowWizard(false)} checklist={checklist} />
         ) : tab === "positions" ? (
-          <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
-            {active.length === 0 ? (
-              <Card style={{ textAlign: "center", padding: 40 }}>
-                <div style={{ fontSize: 40, marginBottom: 12 }}>🚪</div>
-                <div style={{ fontSize: 16, fontWeight: 600, marginBottom: 6 }}>열린 포지션 없음</div>
-                <div style={{ fontSize: 13, color: C.muted, marginBottom: 20 }}>분석을 통과해야 진입할 수 있습니다</div>
-                <button onClick={() => setShowWizard(true)} style={{ padding: "12px 24px", borderRadius: 10, border: "none", background: C.accent, color: "#000", fontWeight: 700, fontSize: 14, cursor: "pointer", fontFamily: "'Space Grotesk',sans-serif" }}>새 분석 시작하기</button>
-              </Card>
-            ) : (
-              active.map(p => <PositionCard key={p.id} pos={p} onClose={setCloseTarget} onView={setDetailPos} />)
-            )}
+          <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
+            {(() => {
+              const fullActive = positions.filter(p => p.status === "active" && p.fillType !== "partial");
+              const partials = positions.filter(p => p.status === "active" && p.fillType === "partial");
+              const unfilled = positions.filter(p => p.status === "unfilled");
+              const anyPos = fullActive.length + partials.length + unfilled.length > 0;
+
+              return <>
+                {/* 포지션 없음 */}
+                {!anyPos && (
+                  <Card style={{ textAlign: "center", padding: 40 }}>
+                    <div style={{ fontSize: 40, marginBottom: 12 }}>🚪</div>
+                    <div style={{ fontSize: 16, fontWeight: 600, marginBottom: 6 }}>열린 포지션 없음</div>
+                    <div style={{ fontSize: 13, color: C.muted, marginBottom: 20 }}>분석을 통과해야 진입할 수 있습니다</div>
+                    <button onClick={() => setShowWizard(true)} style={{ padding: "12px 24px", borderRadius: 10, border: "none", background: C.accent, color: "#000", fontWeight: 700, fontSize: 14, cursor: "pointer", fontFamily: "'Space Grotesk',sans-serif" }}>새 분석 시작하기</button>
+                  </Card>
+                )}
+
+                {/* 완전 체결 포지션 */}
+                {fullActive.length > 0 && (
+                  <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+                    <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                      <div style={{ width: 8, height: 8, borderRadius: "50%", background: C.accent, boxShadow: "0 0 6px " + C.accent, animation: "pulse 2s infinite" }} />
+                      <span style={{ fontSize: 13, fontWeight: 700 }}>진행 중</span>
+                      <span style={{ fontSize: 12, color: C.accent }}>{fullActive.length}건</span>
+                    </div>
+                    {fullActive.map(p => <PositionCard key={p.id} pos={p} onClose={setCloseTarget} onView={setDetailPos} onUpdateQty={handleUpdateQty} />)}
+                  </div>
+                )}
+
+                {/* 부분 체결 포지션 */}
+                {partials.length > 0 && (
+                  <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+                    <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                      <div style={{ width: 8, height: 8, borderRadius: "50%", background: C.yellow, boxShadow: "0 0 6px " + C.yellow, animation: "pulse 2s infinite" }} />
+                      <span style={{ fontSize: 13, fontWeight: 700, color: C.yellow }}>부분 체결</span>
+                      <span style={{ fontSize: 12, color: C.yellow }}>{partials.length}건</span>
+                    </div>
+                    {partials.map(p => <PositionCard key={p.id} pos={p} onClose={setCloseTarget} onView={setDetailPos} onUpdateQty={handleUpdateQty} />)}
+                  </div>
+                )}
+
+                {/* 미체결 */}
+                {unfilled.length > 0 && (
+                  <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+                    <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                      <div style={{ width: 8, height: 8, borderRadius: "50%", background: C.muted }} />
+                      <span style={{ fontSize: 13, fontWeight: 700, color: C.muted }}>미체결 (시뮬레이션)</span>
+                      <span style={{ fontSize: 12, color: C.muted }}>{unfilled.length}건</span>
+                    </div>
+                    {unfilled.map(p => <PositionCard key={p.id} pos={p} onClose={setCloseTarget} onView={setDetailPos} onUpdateQty={handleUpdateQty} />)}
+                  </div>
+                )}
+              </>;
+            })()}
+          </div>
           </div>
         ) : tab === "history" ? (
           <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
