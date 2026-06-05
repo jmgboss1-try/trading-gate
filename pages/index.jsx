@@ -127,11 +127,11 @@ function AnalysisWizard({ onComplete, onCancel, initialData, checklist }) {
   const allItems = checklist.flatMap(g => g.items);
   const maxScore = allItems.reduce((a, i) => a + i.score, 0);
   const [step, setStep] = useState(1);
+  const [images, setImages] = useState([]); // [{ base64, mime, preview }]
+  const [imgIdx, setImgIdx] = useState(0);
   const [symbol, setSymbol] = useState(initialData?.symbol || "BTC/USDT");
   const [customSymbol, setCustomSymbol] = useState("");
   const [dir, setDir] = useState(initialData?.dir || "롱");
-  const [tf, setTf] = useState(initialData?.tf || "15m");
-  const [htfTf, setHtfTf] = useState(initialData?.htfTf || "4h");
   const [checked, setChecked] = useState(initialData?.checked || {});
   const [entry, setEntry] = useState(initialData?.entry || "");
   const [sl, setSl] = useState(initialData?.sl || "");
@@ -142,6 +142,25 @@ function AnalysisWizard({ onComplete, onCancel, initialData, checklist }) {
   const [memo, setMemo] = useState(initialData?.memo || "");
   const [aiLoading, setAiLoading] = useState(false);
   const [aiAdvice, setAiAdvice] = useState("");
+  const fileRef = useRef();
+
+  const addImages = (files) => {
+    Array.from(files).forEach(file => {
+      const mime = file.type || "image/jpeg";
+      const reader = new FileReader();
+      reader.onload = (ev) => {
+        const preview = ev.target.result;
+        const base64 = preview.split(",")[1];
+        setImages(imgs => [...imgs, { base64, mime, preview }]);
+      };
+      reader.readAsDataURL(file);
+    });
+  };
+
+  const removeImage = (i) => {
+    setImages(imgs => imgs.filter((_, idx) => idx !== i));
+    setImgIdx(idx => Math.max(0, idx - 1));
+  };
 
   const toggle = id => setChecked(c => ({ ...c, [id]: !c[id] }));
   const score = allItems.filter(i => checked[i.id]).reduce((a, i) => a + i.score, 0);
@@ -183,25 +202,72 @@ function AnalysisWizard({ onComplete, onCancel, initialData, checklist }) {
 
   const handleComplete = () => {
     const finalSymbol = symbol === "기타" ? customSymbol : symbol;
-    onComplete({ symbol: finalSymbol, dir, tf, htfTf, checked, entry, sl, tp, lev, balance, riskPct, memo, score, passed, rrRatio: Math.round(rrRatio * 100) / 100, posSizeUsdt: Math.round(posSizeUsdt * 100) / 100, maxLoss: Math.round(maxLoss * 100) / 100, aiAdvice, date: todayStr(), id: Date.now(), status: "active" });
+    onComplete({ symbol: finalSymbol, dir, checked, entry, sl, tp, lev, balance, riskPct, memo, score, passed, rrRatio: Math.round(rrRatio * 100) / 100, posSizeUsdt: Math.round(posSizeUsdt * 100) / 100, maxLoss: Math.round(maxLoss * 100) / 100, aiAdvice, date: todayStr(), id: Date.now(), status: "active", images });
   };
+
+  // 이미지 상단 고정 컴포넌트
+  const ImageViewer = () => images.length > 0 ? (
+    <div style={{ position: "relative", marginBottom: 16, borderRadius: 12, overflow: "hidden", background: "#000" }}>
+      <img src={images[imgIdx]?.preview} alt="차트" style={{ width: "100%", maxHeight: 220, objectFit: "contain", display: "block" }} />
+      {images.length > 1 && (
+        <>
+          <button onClick={() => setImgIdx(i => (i - 1 + images.length) % images.length)} style={{ position: "absolute", left: 8, top: "50%", transform: "translateY(-50%)", background: "rgba(0,0,0,0.6)", border: "none", color: "#fff", width: 32, height: 32, borderRadius: "50%", cursor: "pointer", fontSize: 16 }}>‹</button>
+          <button onClick={() => setImgIdx(i => (i + 1) % images.length)} style={{ position: "absolute", right: 8, top: "50%", transform: "translateY(-50%)", background: "rgba(0,0,0,0.6)", border: "none", color: "#fff", width: 32, height: 32, borderRadius: "50%", cursor: "pointer", fontSize: 16 }}>›</button>
+          <div style={{ position: "absolute", bottom: 8, left: "50%", transform: "translateX(-50%)", display: "flex", gap: 4 }}>
+            {images.map((_, i) => <div key={i} onClick={() => setImgIdx(i)} style={{ width: i === imgIdx ? 16 : 6, height: 6, borderRadius: 3, background: i === imgIdx ? C.accent : "rgba(255,255,255,0.4)", cursor: "pointer", transition: "all 0.2s" }} />)}
+          </div>
+        </>
+      )}
+      <button onClick={() => removeImage(imgIdx)} style={{ position: "absolute", top: 8, right: 8, background: "rgba(0,0,0,0.7)", border: "none", color: "#fff", width: 26, height: 26, borderRadius: "50%", cursor: "pointer", fontSize: 13 }}>✕</button>
+      <div style={{ position: "absolute", top: 8, left: 8, background: "rgba(0,0,0,0.6)", padding: "2px 8px", borderRadius: 10, fontSize: 11, color: "#fff" }}>{imgIdx + 1}/{images.length}</div>
+    </div>
+  ) : null;
 
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 0, animation: "fadeUp 0.3s ease" }}>
       {/* 상단 헤더 */}
-      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 20 }}>
+      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 16 }}>
         <button onClick={onCancel} style={{ background: "none", border: "none", color: C.muted, cursor: "pointer", fontSize: 14, display: "flex", alignItems: "center", gap: 6 }}>← 취소</button>
         <div style={{ display: "flex", gap: 6 }}>
-          {[1,2,3,4].map(n => (
-            <div key={n} onClick={() => setStep(n)} style={{ width: n <= step ? 28 : 20, height: 6, borderRadius: 3, background: n === step ? C.accent : n < step ? C.accent + "60" : C.surface2, transition: "all 0.3s", cursor: "pointer" }} />
+          {[1,2,3,4,5].map(n => (
+            <div key={n} onClick={() => setStep(n)} style={{ width: n <= step ? 24 : 16, height: 6, borderRadius: 3, background: n === step ? C.accent : n < step ? C.accent + "60" : C.surface2, transition: "all 0.3s", cursor: "pointer" }} />
           ))}
         </div>
-        <span style={{ fontSize: 12, color: C.muted }}>Step {step}/4</span>
+        <span style={{ fontSize: 12, color: C.muted }}>Step {step}/5</span>
       </div>
 
-      {/* Step 1: 기본 설정 */}
+      {/* Step 1: 차트 이미지 업로드 */}
       {step === 1 && (
         <div style={{ display: "flex", flexDirection: "column", gap: 16, animation: "fadeUp 0.3s ease" }}>
+          <div>
+            <div style={{ fontSize: 20, fontWeight: 700, marginBottom: 4 }}>차트 업로드</div>
+            <div style={{ fontSize: 13, color: C.muted }}>트레이딩뷰 분석 캡처를 올려주세요</div>
+          </div>
+
+          {/* 이미지 뷰어 */}
+          <ImageViewer />
+
+          {/* 업로드 버튼 */}
+          <input ref={fileRef} type="file" accept="image/*" multiple onChange={e => addImages(e.target.files)} style={{ display: "none" }} />
+          <button onClick={() => fileRef.current.click()} style={{ width: "100%", padding: 24, border: "2px dashed " + (images.length > 0 ? C.accent + "60" : C.border), borderRadius: 14, background: images.length > 0 ? C.accentDim : "transparent", cursor: "pointer", display: "flex", flexDirection: "column", alignItems: "center", gap: 8, color: images.length > 0 ? C.accent : C.muted }}>
+            <div style={{ fontSize: 32 }}>📊</div>
+            <div style={{ fontSize: 14, fontWeight: 600 }}>{images.length > 0 ? "+ 차트 추가 업로드" : "차트 이미지 업로드"}</div>
+            <div style={{ fontSize: 11 }}>여러 장 선택 가능 · 가로 스와이프로 확인</div>
+          </button>
+
+          <div style={{ display: "flex", gap: 10 }}>
+            <button onClick={() => setStep(2)} style={{ flex: 2, padding: "14px 0", borderRadius: 12, border: "none", background: C.accent, color: "#000", fontWeight: 700, fontSize: 15, cursor: "pointer", fontFamily: "'Space Grotesk',sans-serif" }}>
+              {images.length > 0 ? "다음 → 종목/방향 설정" : "이미지 없이 계속하기 →"}
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* Step 2: 기본 설정 */}
+      {step === 2 && (
+        <div style={{ display: "flex", flexDirection: "column", gap: 16, animation: "fadeUp 0.3s ease" }}>
+          {/* 이미지 상단 고정 */}
+          <ImageViewer />
           <div>
             <div style={{ fontSize: 20, fontWeight: 700, marginBottom: 4 }}>기본 설정</div>
             <div style={{ fontSize: 13, color: C.muted }}>어떤 종목을 어느 방향으로 분석하나요?</div>
@@ -224,13 +290,18 @@ function AnalysisWizard({ onComplete, onCancel, initialData, checklist }) {
               {symbol === "기타" && <input value={customSymbol} onChange={e => setCustomSymbol(e.target.value)} placeholder="예: AVAX/USDT" style={{ marginTop: 8, width: "100%", background: C.surface2, border: "1px solid " + C.border, color: C.text, borderRadius: 8, padding: "8px 12px" }} />}
             </div>
           </Card>
-          <button onClick={() => setStep(2)} style={{ width: "100%", padding: "14px 0", borderRadius: 12, border: "none", background: C.accent, color: "#000", fontWeight: 700, fontSize: 15, cursor: "pointer", fontFamily: "'Space Grotesk',sans-serif" }}>다음 → 근거 분석</button>
+          <div style={{ display: "flex", gap: 10 }}>
+            <button onClick={() => setStep(1)} style={{ flex: 1, padding: "13px 0", borderRadius: 12, border: "1px solid " + C.border, background: "transparent", color: C.muted, fontWeight: 600, fontSize: 14, cursor: "pointer", fontFamily: "'Space Grotesk',sans-serif" }}>← 이전</button>
+            <button onClick={() => setStep(3)} style={{ flex: 2, padding: "14px 0", borderRadius: 12, border: "none", background: C.accent, color: "#000", fontWeight: 700, fontSize: 15, cursor: "pointer", fontFamily: "'Space Grotesk',sans-serif" }}>다음 → 근거 분석</button>
+          </div>
         </div>
       )}
 
-      {/* Step 2: 기술적 분석 체크리스트 */}
-      {step === 2 && (
+      {/* Step 3: 기술적 분석 체크리스트 */}
+      {step === 3 && (
         <div style={{ display: "flex", flexDirection: "column", gap: 16, animation: "fadeUp 0.3s ease" }}>
+          {/* 이미지 상단 고정 */}
+          <ImageViewer />
           {/* 방향 배지 상단 고정 */}
           <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
             <div>
@@ -270,17 +341,18 @@ function AnalysisWizard({ onComplete, onCancel, initialData, checklist }) {
             </Card>
           ))}
           <div style={{ display: "flex", gap: 10 }}>
-            <button onClick={() => setStep(1)} style={{ flex: 1, padding: "13px 0", borderRadius: 12, border: "1px solid " + C.border, background: "transparent", color: C.muted, fontWeight: 600, fontSize: 14, cursor: "pointer", fontFamily: "'Space Grotesk',sans-serif" }}>← 이전</button>
-            <button onClick={() => setStep(3)} style={{ flex: 2, padding: "13px 0", borderRadius: 12, border: "none", background: passed ? C.accent : C.surface2, color: passed ? "#000" : C.muted, fontWeight: 700, fontSize: 14, cursor: "pointer", fontFamily: "'Space Grotesk',sans-serif" }}>
+            <button onClick={() => setStep(2)} style={{ flex: 1, padding: "13px 0", borderRadius: 12, border: "1px solid " + C.border, background: "transparent", color: C.muted, fontWeight: 600, fontSize: 14, cursor: "pointer", fontFamily: "'Space Grotesk',sans-serif" }}>← 이전</button>
+            <button onClick={() => setStep(4)} style={{ flex: 2, padding: "13px 0", borderRadius: 12, border: "none", background: passed ? C.accent : C.surface2, color: passed ? "#000" : C.muted, fontWeight: 700, fontSize: 14, cursor: "pointer", fontFamily: "'Space Grotesk',sans-serif" }}>
               {passed ? "다음 → 리스크 계산 ✓" : `점수 부족 (${score}/${THRESHOLD}점) — 계속 진행`}
             </button>
           </div>
         </div>
       )}
 
-      {/* Step 3: 리스크 계산기 */}
-      {step === 3 && (
+      {/* Step 4: 리스크 계산기 */}
+      {step === 4 && (
         <div style={{ display: "flex", flexDirection: "column", gap: 16, animation: "fadeUp 0.3s ease" }}>
+          <ImageViewer />
           <div>
             <div style={{ fontSize: 20, fontWeight: 700, marginBottom: 4 }}>리스크 계산기</div>
             <div style={{ fontSize: 13, color: C.muted }}>손절가를 먼저 정하고 포지션 크기를 계산하세요</div>
@@ -334,15 +406,16 @@ function AnalysisWizard({ onComplete, onCancel, initialData, checklist }) {
             </div>
           </Card>
           <div style={{ display: "flex", gap: 10 }}>
-            <button onClick={() => setStep(2)} style={{ flex: 1, padding: "13px 0", borderRadius: 12, border: "1px solid " + C.border, background: "transparent", color: C.muted, fontWeight: 600, fontSize: 14, cursor: "pointer", fontFamily: "'Space Grotesk',sans-serif" }}>← 이전</button>
-            <button onClick={() => setStep(4)} style={{ flex: 2, padding: "13px 0", borderRadius: 12, border: "none", background: C.accent, color: "#000", fontWeight: 700, fontSize: 14, cursor: "pointer", fontFamily: "'Space Grotesk',sans-serif" }}>다음 → 최종 확인</button>
+            <button onClick={() => setStep(3)} style={{ flex: 1, padding: "13px 0", borderRadius: 12, border: "1px solid " + C.border, background: "transparent", color: C.muted, fontWeight: 600, fontSize: 14, cursor: "pointer", fontFamily: "'Space Grotesk',sans-serif" }}>← 이전</button>
+            <button onClick={() => setStep(5)} style={{ flex: 2, padding: "13px 0", borderRadius: 12, border: "none", background: C.accent, color: "#000", fontWeight: 700, fontSize: 14, cursor: "pointer", fontFamily: "'Space Grotesk',sans-serif" }}>다음 → 최종 확인</button>
           </div>
         </div>
       )}
 
-      {/* Step 4: 최종 확인 & AI */}
-      {step === 4 && (
+      {/* Step 5: 최종 확인 & AI */}
+      {step === 5 && (
         <div style={{ display: "flex", flexDirection: "column", gap: 16, animation: "fadeUp 0.3s ease" }}>
+          <ImageViewer />
           <div>
             <div style={{ fontSize: 20, fontWeight: 700, marginBottom: 4 }}>최종 확인</div>
             <div style={{ fontSize: 13, color: C.muted }}>분석을 검토하고 진입 여부를 결정하세요</div>
@@ -394,7 +467,7 @@ function AnalysisWizard({ onComplete, onCancel, initialData, checklist }) {
           </Card>
 
           <div style={{ display: "flex", gap: 10 }}>
-            <button onClick={() => setStep(3)} style={{ flex: 1, padding: "13px 0", borderRadius: 12, border: "1px solid " + C.border, background: "transparent", color: C.muted, fontWeight: 600, fontSize: 14, cursor: "pointer", fontFamily: "'Space Grotesk',sans-serif" }}>← 이전</button>
+            <button onClick={() => setStep(4)} style={{ flex: 1, padding: "13px 0", borderRadius: 12, border: "1px solid " + C.border, background: "transparent", color: C.muted, fontWeight: 600, fontSize: 14, cursor: "pointer", fontFamily: "'Space Grotesk',sans-serif" }}>← 이전</button>
             <button onClick={handleComplete} style={{ flex: 2, padding: "13px 0", borderRadius: 12, border: "none", background: passed ? C.accent : C.surface2, color: passed ? "#000" : C.muted, fontWeight: 700, fontSize: 14, cursor: "pointer", fontFamily: "'Space Grotesk',sans-serif" }}>
               {passed ? "✓ 분석 저장 & 포지션 오픈" : "⚠️ 비허가 상태로 저장"}
             </button>
@@ -438,6 +511,17 @@ function PositionCard({ pos, onClose, onView }) {
 
       {expanded && (
         <div style={{ padding: "0 16px 14px", borderTop: "1px solid " + C.border }}>
+          {/* 차트 이미지 썸네일 */}
+          {pos.images && pos.images.length > 0 && (
+            <div style={{ marginTop: 12, marginBottom: 12 }}>
+              <div style={{ fontSize: 10, color: C.muted, marginBottom: 6, fontWeight: 600 }}>차트 이미지 {pos.images.length}장</div>
+              <div style={{ display: "flex", gap: 6, overflowX: "auto" }}>
+                {pos.images.map((img, i) => (
+                  <img key={i} src={img.preview} alt={`차트 ${i+1}`} onClick={() => window.open(img.preview)} style={{ height: 70, width: 110, objectFit: "cover", borderRadius: 8, border: "1px solid " + C.border, cursor: "pointer", flexShrink: 0 }} />
+                ))}
+              </div>
+            </div>
+          )}
           <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 8, marginTop: 12, marginBottom: 12 }}>
             {[["진입가", pos.entry ? pos.entry + " USDT" : "-"], ["손절가", pos.sl ? pos.sl + " USDT" : "-"], ["목표가", pos.tp ? pos.tp + " USDT" : "-"], ["손익비", pos.rrRatio ? "1:" + pos.rrRatio : "-"], ["포지션", pos.posSizeUsdt ? pos.posSizeUsdt + " USDT" : "-"], ["최대손실", pos.maxLoss ? pos.maxLoss + " USDT" : "-"]].map(([label, val]) => (
               <div key={label} style={{ background: C.surface2, borderRadius: 8, padding: "8px 10px" }}>
@@ -461,6 +545,20 @@ function PositionCard({ pos, onClose, onView }) {
 function CloseModal({ pos, onSave, onCancel }) {
   const [exitPrice, setExitPrice] = useState("");
   const [exitMemo, setExitMemo] = useState("");
+  const [exitImages, setExitImages] = useState([]);
+  const [exitImgIdx, setExitImgIdx] = useState(0);
+  const fileRef = useRef();
+
+  const addExitImages = (files) => {
+    Array.from(files).forEach(file => {
+      const reader = new FileReader();
+      reader.onload = (ev) => {
+        const preview = ev.target.result;
+        setExitImages(imgs => [...imgs, { base64: preview.split(",")[1], mime: file.type, preview }]);
+      };
+      reader.readAsDataURL(file);
+    });
+  };
 
   const entryN = parseFloat(pos.entry) || 0;
   const exitN = parseFloat(exitPrice) || 0;
@@ -489,10 +587,28 @@ function CloseModal({ pos, onSave, onCancel }) {
             <div style={{ fontSize: 11, color: C.muted, marginBottom: 6, fontWeight: 600 }}>복기 메모 (선택)</div>
             <textarea value={exitMemo} onChange={e => setExitMemo(e.target.value)} placeholder="왜 청산했나요? 잘한 점, 개선할 점..." style={{ width: "100%", background: C.surface2, border: "1px solid " + C.border, color: C.text, borderRadius: 10, padding: "10px 14px", minHeight: 70, resize: "vertical", fontSize: 13 }} />
           </div>
+          {/* 청산 차트 업로드 */}
+          <div>
+            <div style={{ fontSize: 11, color: C.muted, marginBottom: 6, fontWeight: 600 }}>청산 차트 (선택)</div>
+            <input ref={fileRef} type="file" accept="image/*" multiple onChange={e => addExitImages(e.target.files)} style={{ display: "none" }} />
+            {exitImages.length > 0 && (
+              <div style={{ position: "relative", marginBottom: 8, borderRadius: 10, overflow: "hidden", background: "#000" }}>
+                <img src={exitImages[exitImgIdx]?.preview} style={{ width: "100%", maxHeight: 160, objectFit: "contain", display: "block" }} />
+                {exitImages.length > 1 && (
+                  <div style={{ position: "absolute", bottom: 6, left: "50%", transform: "translateX(-50%)", display: "flex", gap: 4 }}>
+                    {exitImages.map((_, i) => <div key={i} onClick={() => setExitImgIdx(i)} style={{ width: i === exitImgIdx ? 14 : 5, height: 5, borderRadius: 3, background: i === exitImgIdx ? C.accent : "rgba(255,255,255,0.4)", cursor: "pointer" }} />)}
+                  </div>
+                )}
+              </div>
+            )}
+            <button onClick={() => fileRef.current.click()} style={{ width: "100%", padding: "10px 0", borderRadius: 9, border: "1px dashed " + C.border, background: "transparent", color: C.muted, fontSize: 12, cursor: "pointer", fontFamily: "'Space Grotesk',sans-serif" }}>
+              {exitImages.length > 0 ? `📊 ${exitImages.length}장 업로드됨 · 추가하기` : "📊 청산 차트 업로드"}
+            </button>
+          </div>
         </div>
         <div style={{ display: "flex", gap: 10, marginTop: 16 }}>
           <button onClick={onCancel} style={{ flex: 1, padding: "12px 0", borderRadius: 10, border: "1px solid " + C.border, background: "transparent", color: C.muted, fontWeight: 600, cursor: "pointer", fontFamily: "'Space Grotesk',sans-serif" }}>취소</button>
-          <button onClick={() => onSave({ exitPrice: exitN, exitMemo, realPnl: Math.round(pnl * 100) / 100, realPct: Math.round(pct * 100) / 100, exitDate: todayStr(), status: pnl >= 0 ? "win" : "loss" })} disabled={!exitN} style={{ flex: 2, padding: "12px 0", borderRadius: 10, border: "none", background: C.accent, color: "#000", fontWeight: 700, cursor: "pointer", fontFamily: "'Space Grotesk',sans-serif", opacity: !exitN ? 0.5 : 1 }}>저장</button>
+          <button onClick={() => onSave({ exitPrice: exitN, exitMemo, exitImages, realPnl: Math.round(pnl * 100) / 100, realPct: Math.round(pct * 100) / 100, exitDate: todayStr(), status: pnl >= 0 ? "win" : "loss" })} disabled={!exitN} style={{ flex: 2, padding: "12px 0", borderRadius: 10, border: "none", background: C.accent, color: "#000", fontWeight: 700, cursor: "pointer", fontFamily: "'Space Grotesk',sans-serif", opacity: !exitN ? 0.5 : 1 }}>저장</button>
         </div>
       </div>
     </div>
@@ -593,7 +709,9 @@ function StatsView({ positions }) {
 function ChecklistSettings({ checklist, onSave }) {
   const [groups, setGroups] = useState(JSON.parse(JSON.stringify(checklist)));
   const [newGroupName, setNewGroupName] = useState("");
-  const [newItems, setNewItems] = useState({}); // { groupIdx: { label, desc, score } }
+  const [newItems, setNewItems] = useState({});
+  const [editingItem, setEditingItem] = useState(null); // { gi, ii }
+  const [editDraft, setEditDraft] = useState({});
   const [saved, setSaved] = useState(false);
 
   const handleSave = () => {
@@ -622,10 +740,20 @@ function ChecklistSettings({ checklist, onSave }) {
 
   const removeItem = (gi, ii) => {
     setGroups(g => g.map((group, i) => i === gi ? { ...group, items: group.items.filter((_, j) => j !== ii) } : group));
+    setEditingItem(null);
   };
 
-  const updateItemScore = (gi, ii, score) => {
-    setGroups(g => g.map((group, i) => i === gi ? { ...group, items: group.items.map((item, j) => j === ii ? { ...item, score: parseInt(score) || 1 } : item) } : group));
+  const startEdit = (gi, ii, item) => {
+    setEditingItem({ gi, ii });
+    setEditDraft({ label: item.label, desc: item.desc || "", score: String(item.score) });
+  };
+
+  const saveEdit = (gi, ii) => {
+    setGroups(g => g.map((group, i) => i === gi ? {
+      ...group,
+      items: group.items.map((item, j) => j === ii ? { ...item, label: editDraft.label, desc: editDraft.desc, score: parseInt(editDraft.score) || 1 } : item)
+    } : group));
+    setEditingItem(null);
   };
 
   const totalMax = groups.flatMap(g => g.items).reduce((a, i) => a + i.score, 0);
@@ -644,25 +772,41 @@ function ChecklistSettings({ checklist, onSave }) {
         <Card key={gi} accent={C.blue}>
           <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 12 }}>
             <div style={{ fontSize: 13, fontWeight: 700, color: C.blue }}>{group.icon} {group.group}</div>
-            <button onClick={() => removeGroup(gi)} style={{ background: "none", border: "none", color: C.muted, cursor: "pointer", fontSize: 13, padding: "2px 6px" }}>✕ 그룹삭제</button>
+            <button onClick={() => removeGroup(gi)} style={{ background: "none", border: "none", color: C.muted, cursor: "pointer", fontSize: 12, padding: "2px 6px" }}>✕ 그룹삭제</button>
           </div>
 
           {/* 항목 목록 */}
           <div style={{ display: "flex", flexDirection: "column", gap: 6, marginBottom: 12 }}>
-            {group.items.map((item, ii) => (
-              <div key={ii} style={{ display: "flex", alignItems: "center", gap: 8, padding: "8px 10px", background: C.surface2, borderRadius: 8 }}>
-                <div style={{ flex: 1 }}>
-                  <div style={{ fontSize: 13, fontWeight: 600 }}>{item.label}</div>
-                  {item.desc && <div style={{ fontSize: 11, color: C.muted }}>{item.desc}</div>}
+            {group.items.map((item, ii) => {
+              const isEditing = editingItem?.gi === gi && editingItem?.ii === ii;
+              return isEditing ? (
+                /* 수정 모드 */
+                <div key={ii} style={{ padding: "10px 12px", background: C.accentDim, borderRadius: 8, border: "1px solid " + C.accent + "50", display: "flex", flexDirection: "column", gap: 8 }}>
+                  <input value={editDraft.label} onChange={e => setEditDraft(d => ({ ...d, label: e.target.value }))} placeholder="항목 이름" style={{ background: C.surface, border: "1px solid " + C.accent + "60", color: C.text, borderRadius: 7, padding: "7px 10px", fontSize: 13, fontWeight: 600 }} />
+                  <input value={editDraft.desc} onChange={e => setEditDraft(d => ({ ...d, desc: e.target.value }))} placeholder="설명 (선택)" style={{ background: C.surface, border: "1px solid " + C.border, color: C.text, borderRadius: 7, padding: "7px 10px", fontSize: 12 }} />
+                  <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
+                    <select value={editDraft.score} onChange={e => setEditDraft(d => ({ ...d, score: e.target.value }))} style={{ background: C.surface, border: "1px solid " + C.border, color: C.accent, borderRadius: 7, padding: "7px 10px", fontSize: 12, fontFamily: "'JetBrains Mono',monospace" }}>
+                      {[1,2,3,4,5].map(n => <option key={n} value={n}>+{n}점</option>)}
+                    </select>
+                    <button onClick={() => saveEdit(gi, ii)} style={{ flex: 1, padding: "8px 0", borderRadius: 7, border: "none", background: C.accent, color: "#000", fontWeight: 700, fontSize: 12, cursor: "pointer", fontFamily: "'Space Grotesk',sans-serif" }}>저장</button>
+                    <button onClick={() => setEditingItem(null)} style={{ padding: "8px 12px", borderRadius: 7, border: "1px solid " + C.border, background: "transparent", color: C.muted, fontSize: 12, cursor: "pointer", fontFamily: "'Space Grotesk',sans-serif" }}>취소</button>
+                    <button onClick={() => removeItem(gi, ii)} style={{ padding: "8px 12px", borderRadius: 7, border: "1px solid " + C.red + "40", background: C.redDim, color: C.red, fontSize: 12, cursor: "pointer", fontFamily: "'Space Grotesk',sans-serif" }}>삭제</button>
+                  </div>
                 </div>
-                <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
-                  <select value={item.score} onChange={e => updateItemScore(gi, ii, e.target.value)} style={{ background: C.surface, border: "1px solid " + C.border, color: C.accent, borderRadius: 6, padding: "3px 6px", fontSize: 12, fontFamily: "'JetBrains Mono',monospace", width: 60 }}>
-                    {[1,2,3,4,5].map(n => <option key={n} value={n}>+{n}점</option>)}
-                  </select>
-                  <button onClick={() => removeItem(gi, ii)} style={{ background: "none", border: "none", color: C.red, cursor: "pointer", fontSize: 16, lineHeight: 1 }}>✕</button>
+              ) : (
+                /* 일반 모드 */
+                <div key={ii} style={{ display: "flex", alignItems: "center", gap: 8, padding: "8px 10px", background: C.surface2, borderRadius: 8, cursor: "pointer" }} onClick={() => startEdit(gi, ii, item)}>
+                  <div style={{ flex: 1 }}>
+                    <div style={{ fontSize: 13, fontWeight: 600 }}>{item.label}</div>
+                    {item.desc && <div style={{ fontSize: 11, color: C.muted }}>{item.desc}</div>}
+                  </div>
+                  <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                    <span style={{ fontFamily: "'JetBrains Mono',monospace", fontSize: 11, color: C.accent, background: C.accentDim, padding: "2px 8px", borderRadius: 10 }}>+{item.score}점</span>
+                    <span style={{ fontSize: 11, color: C.muted }}>수정 →</span>
+                  </div>
                 </div>
-              </div>
-            ))}
+              );
+            })}
           </div>
 
           {/* 항목 추가 */}
@@ -986,6 +1130,17 @@ export default function App() {
                 <div style={{ padding: "12px 14px", background: C.surface2, borderRadius: 10, fontSize: 13 }}>
                   <div style={{ fontSize: 11, color: C.muted, fontWeight: 600, marginBottom: 4 }}>복기 메모</div>
                   {detailPos.exitMemo}
+                </div>
+              )}
+              {/* 청산 차트 */}
+              {detailPos.exitImages && detailPos.exitImages.length > 0 && (
+                <div>
+                  <div style={{ fontSize: 11, color: C.muted, fontWeight: 600, marginBottom: 6 }}>청산 차트</div>
+                  <div style={{ display: "flex", gap: 6, overflowX: "auto" }}>
+                    {detailPos.exitImages.map((img, i) => (
+                      <img key={i} src={img.preview} onClick={() => window.open(img.preview)} style={{ height: 80, width: 130, objectFit: "cover", borderRadius: 8, border: "1px solid " + C.border, cursor: "pointer", flexShrink: 0 }} />
+                    ))}
+                  </div>
                 </div>
               )}
               <button onClick={() => { if (confirm("이 포지션을 삭제할까요?")) { deletePos(detailPos.id); setDetailPos(null); } }} style={{ padding: "10px 0", borderRadius: 10, border: "1px solid " + C.red + "40", background: C.redDim, color: C.red, fontWeight: 600, fontSize: 13, cursor: "pointer", fontFamily: "'Space Grotesk',sans-serif" }}>삭제</button>
