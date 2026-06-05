@@ -123,7 +123,9 @@ function ScoreMeter({ score, max, threshold }) {
 }
 
 // ── 분석 마법사 ────────────────────────────────────────────
-function AnalysisWizard({ onComplete, onCancel, initialData }) {
+function AnalysisWizard({ onComplete, onCancel, initialData, checklist }) {
+  const allItems = checklist.flatMap(g => g.items);
+  const maxScore = allItems.reduce((a, i) => a + i.score, 0);
   const [step, setStep] = useState(1);
   const [symbol, setSymbol] = useState(initialData?.symbol || "BTC/USDT");
   const [customSymbol, setCustomSymbol] = useState("");
@@ -142,7 +144,7 @@ function AnalysisWizard({ onComplete, onCancel, initialData }) {
   const [aiAdvice, setAiAdvice] = useState("");
 
   const toggle = id => setChecked(c => ({ ...c, [id]: !c[id] }));
-  const score = ALL_ITEMS.filter(i => checked[i.id]).reduce((a, i) => a + i.score, 0);
+  const score = allItems.filter(i => checked[i.id]).reduce((a, i) => a + i.score, 0);
   const passed = score >= THRESHOLD;
 
   // 리스크 계산
@@ -160,8 +162,8 @@ function AnalysisWizard({ onComplete, onCancel, initialData }) {
 
   const getAiAdvice = async () => {
     setAiLoading(true); setAiAdvice("");
-    const checkedItems = ALL_ITEMS.filter(i => checked[i.id]).map(i => i.label).join(", ");
-    const unchecked = ALL_ITEMS.filter(i => !checked[i.id]).map(i => i.label).join(", ");
+    const checkedItems = allItems.filter(i => checked[i.id]).map(i => i.label).join(", ");
+    const unchecked = allItems.filter(i => !checked[i.id]).map(i => i.label).join(", ");
     const prompt = `코인 선물 트레이딩 전문가로서 다음 진입 분석을 검토하고 한국어로 간결하게 피드백해주세요 (3-5문장):
 종목: ${symbol} / 방향: ${dir} / 타임프레임: ${tf} / 레버리지: ${lev}x
 충족된 조건: ${checkedItems || "없음"}
@@ -212,34 +214,14 @@ function AnalysisWizard({ onComplete, onCancel, initialData }) {
                 </button>
               ))}
             </div>
-            <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
-              <div>
-                <div style={{ fontSize: 11, color: C.muted, marginBottom: 6, fontWeight: 600, letterSpacing: 1 }}>종목</div>
-                <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
-                  {SYMBOLS.map(sym => (
-                    <button key={sym} onClick={() => setSymbol(sym)} style={{ padding: "6px 14px", borderRadius: 20, border: "1px solid " + (symbol === sym ? C.accent : C.border), background: symbol === sym ? C.accentDim : "transparent", color: symbol === sym ? C.accent : C.muted, fontSize: 12, fontWeight: 600, cursor: "pointer", fontFamily: "'JetBrains Mono',monospace" }}>{sym}</button>
-                  ))}
-                </div>
-                {symbol === "기타" && <input value={customSymbol} onChange={e => setCustomSymbol(e.target.value)} placeholder="예: AVAX/USDT" style={{ marginTop: 8, width: "100%", background: C.surface2, border: "1px solid " + C.border, color: C.text, borderRadius: 8, padding: "8px 12px" }} />}
+            <div>
+              <div style={{ fontSize: 11, color: C.muted, marginBottom: 6, fontWeight: 600, letterSpacing: 1 }}>종목</div>
+              <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
+                {SYMBOLS.map(sym => (
+                  <button key={sym} onClick={() => setSymbol(sym)} style={{ padding: "6px 14px", borderRadius: 20, border: "1px solid " + (symbol === sym ? C.accent : C.border), background: symbol === sym ? C.accentDim : "transparent", color: symbol === sym ? C.accent : C.muted, fontSize: 12, fontWeight: 600, cursor: "pointer", fontFamily: "'JetBrains Mono',monospace" }}>{sym}</button>
+                ))}
               </div>
-              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
-                <div>
-                  <div style={{ fontSize: 11, color: C.muted, marginBottom: 6, fontWeight: 600, letterSpacing: 1 }}>진입 타임프레임</div>
-                  <div style={{ display: "flex", flexWrap: "wrap", gap: 5 }}>
-                    {TIMEFRAMES.map(t => (
-                      <button key={t} onClick={() => setTf(t)} style={{ padding: "4px 10px", borderRadius: 16, border: "1px solid " + (tf === t ? C.accent : C.border), background: tf === t ? C.accentDim : "transparent", color: tf === t ? C.accent : C.muted, fontSize: 11, fontWeight: 600, cursor: "pointer", fontFamily: "'JetBrains Mono',monospace" }}>{t}</button>
-                    ))}
-                  </div>
-                </div>
-                <div>
-                  <div style={{ fontSize: 11, color: C.muted, marginBottom: 6, fontWeight: 600, letterSpacing: 1 }}>상위 타임프레임</div>
-                  <div style={{ display: "flex", flexWrap: "wrap", gap: 5 }}>
-                    {TIMEFRAMES.map(t => (
-                      <button key={t} onClick={() => setHtfTf(t)} style={{ padding: "4px 10px", borderRadius: 16, border: "1px solid " + (htfTf === t ? C.blue : C.border), background: htfTf === t ? "rgba(77,166,255,0.1)" : "transparent", color: htfTf === t ? C.blue : C.muted, fontSize: 11, fontWeight: 600, cursor: "pointer", fontFamily: "'JetBrains Mono',monospace" }}>{t}</button>
-                    ))}
-                  </div>
-                </div>
-              </div>
+              {symbol === "기타" && <input value={customSymbol} onChange={e => setCustomSymbol(e.target.value)} placeholder="예: AVAX/USDT" style={{ marginTop: 8, width: "100%", background: C.surface2, border: "1px solid " + C.border, color: C.text, borderRadius: 8, padding: "8px 12px" }} />}
             </div>
           </Card>
           <button onClick={() => setStep(2)} style={{ width: "100%", padding: "14px 0", borderRadius: 12, border: "none", background: C.accent, color: "#000", fontWeight: 700, fontSize: 15, cursor: "pointer", fontFamily: "'Space Grotesk',sans-serif" }}>다음 → 근거 분석</button>
@@ -249,12 +231,21 @@ function AnalysisWizard({ onComplete, onCancel, initialData }) {
       {/* Step 2: 기술적 분석 체크리스트 */}
       {step === 2 && (
         <div style={{ display: "flex", flexDirection: "column", gap: 16, animation: "fadeUp 0.3s ease" }}>
-          <div>
-            <div style={{ fontSize: 20, fontWeight: 700, marginBottom: 4 }}>근거 체크리스트</div>
-            <div style={{ fontSize: 13, color: C.muted }}>충족되는 조건만 체크하세요. 솔직하게!</div>
+          {/* 방향 배지 상단 고정 */}
+          <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+            <div>
+              <div style={{ fontSize: 20, fontWeight: 700, marginBottom: 4 }}>근거 체크리스트</div>
+              <div style={{ fontSize: 13, color: C.muted }}>충족되는 조건만 체크하세요. 솔직하게!</div>
+            </div>
+            <div style={{ display: "flex", flexDirection: "column", alignItems: "flex-end", gap: 4 }}>
+              <div style={{ padding: "6px 16px", borderRadius: 20, background: dir === "롱" ? "rgba(99,255,180,0.15)" : "rgba(255,77,109,0.15)", color: dir === "롱" ? C.long : C.short, fontWeight: 700, fontSize: 15, border: "1px solid " + (dir === "롱" ? C.long : C.short) + "50" }}>
+                {dir === "롱" ? "▲ 롱" : "▼ 숏"}
+              </div>
+              <div style={{ fontFamily: "'JetBrains Mono',monospace", fontSize: 12, color: C.muted }}>{symbol === "기타" ? customSymbol : symbol}</div>
+            </div>
           </div>
-          <ScoreMeter score={score} max={MAX_SCORE} threshold={THRESHOLD} />
-          {ANALYSIS_ITEMS.map(group => (
+          <ScoreMeter score={score} max={maxScore} threshold={THRESHOLD} />
+          {checklist.map(group => (
             <Card key={group.group} accent={C.blue}>
               <div style={{ fontSize: 12, color: C.blue, fontWeight: 700, marginBottom: 14, display: "flex", alignItems: "center", gap: 6 }}><span>{group.icon}</span>{group.group}</div>
               <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
@@ -598,7 +589,205 @@ function StatsView({ positions }) {
   );
 }
 
+// ── 체크리스트 설정 ───────────────────────────────────────
+function ChecklistSettings({ checklist, onSave }) {
+  const [groups, setGroups] = useState(JSON.parse(JSON.stringify(checklist)));
+  const [newGroupName, setNewGroupName] = useState("");
+  const [newItems, setNewItems] = useState({}); // { groupIdx: { label, desc, score } }
+  const [saved, setSaved] = useState(false);
+
+  const handleSave = () => {
+    onSave(groups);
+    setSaved(true);
+    setTimeout(() => setSaved(false), 1500);
+  };
+
+  const addGroup = () => {
+    if (!newGroupName.trim()) return;
+    setGroups(g => [...g, { group: newGroupName.trim(), icon: "📌", items: [] }]);
+    setNewGroupName("");
+  };
+
+  const removeGroup = (gi) => {
+    if (!confirm("그룹을 삭제할까요?")) return;
+    setGroups(g => g.filter((_, i) => i !== gi));
+  };
+
+  const addItem = (gi) => {
+    const ni = newItems[gi] || {};
+    if (!ni.label) return;
+    setGroups(g => g.map((group, i) => i === gi ? { ...group, items: [...group.items, { id: "custom_" + Date.now(), label: ni.label, desc: ni.desc || "", score: parseInt(ni.score) || 1 }] } : group));
+    setNewItems(n => ({ ...n, [gi]: {} }));
+  };
+
+  const removeItem = (gi, ii) => {
+    setGroups(g => g.map((group, i) => i === gi ? { ...group, items: group.items.filter((_, j) => j !== ii) } : group));
+  };
+
+  const updateItemScore = (gi, ii, score) => {
+    setGroups(g => g.map((group, i) => i === gi ? { ...group, items: group.items.map((item, j) => j === ii ? { ...item, score: parseInt(score) || 1 } : item) } : group));
+  };
+
+  const totalMax = groups.flatMap(g => g.items).reduce((a, i) => a + i.score, 0);
+
+  return (
+    <div style={{ display: "flex", flexDirection: "column", gap: 14, animation: "fadeUp 0.3s ease" }}>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+        <div>
+          <div style={{ fontSize: 18, fontWeight: 700 }}>체크리스트 설정</div>
+          <div style={{ fontSize: 12, color: C.muted, marginTop: 2 }}>총 {totalMax}점 만점 · 허가 기준 {THRESHOLD}점</div>
+        </div>
+        <button onClick={handleSave} style={{ padding: "9px 18px", borderRadius: 10, border: "none", background: saved ? C.accent + "80" : C.accent, color: "#000", fontWeight: 700, fontSize: 13, cursor: "pointer", fontFamily: "'Space Grotesk',sans-serif" }}>{saved ? "저장됨 ✓" : "저장"}</button>
+      </div>
+
+      {groups.map((group, gi) => (
+        <Card key={gi} accent={C.blue}>
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 12 }}>
+            <div style={{ fontSize: 13, fontWeight: 700, color: C.blue }}>{group.icon} {group.group}</div>
+            <button onClick={() => removeGroup(gi)} style={{ background: "none", border: "none", color: C.muted, cursor: "pointer", fontSize: 13, padding: "2px 6px" }}>✕ 그룹삭제</button>
+          </div>
+
+          {/* 항목 목록 */}
+          <div style={{ display: "flex", flexDirection: "column", gap: 6, marginBottom: 12 }}>
+            {group.items.map((item, ii) => (
+              <div key={ii} style={{ display: "flex", alignItems: "center", gap: 8, padding: "8px 10px", background: C.surface2, borderRadius: 8 }}>
+                <div style={{ flex: 1 }}>
+                  <div style={{ fontSize: 13, fontWeight: 600 }}>{item.label}</div>
+                  {item.desc && <div style={{ fontSize: 11, color: C.muted }}>{item.desc}</div>}
+                </div>
+                <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+                  <select value={item.score} onChange={e => updateItemScore(gi, ii, e.target.value)} style={{ background: C.surface, border: "1px solid " + C.border, color: C.accent, borderRadius: 6, padding: "3px 6px", fontSize: 12, fontFamily: "'JetBrains Mono',monospace", width: 60 }}>
+                    {[1,2,3,4,5].map(n => <option key={n} value={n}>+{n}점</option>)}
+                  </select>
+                  <button onClick={() => removeItem(gi, ii)} style={{ background: "none", border: "none", color: C.red, cursor: "pointer", fontSize: 16, lineHeight: 1 }}>✕</button>
+                </div>
+              </div>
+            ))}
+          </div>
+
+          {/* 항목 추가 */}
+          <div style={{ display: "flex", flexDirection: "column", gap: 6, padding: 10, background: C.surface2, borderRadius: 8, border: "1px dashed " + C.border }}>
+            <div style={{ fontSize: 11, color: C.muted, fontWeight: 600 }}>+ 항목 추가</div>
+            <input placeholder="항목 이름 (예: 전저점 이탈 여부)" value={(newItems[gi] || {}).label || ""} onChange={e => setNewItems(n => ({ ...n, [gi]: { ...(n[gi] || {}), label: e.target.value } }))} style={{ background: C.surface, border: "1px solid " + C.border, color: C.text, borderRadius: 7, padding: "7px 10px", fontSize: 13 }} />
+            <input placeholder="설명 (선택)" value={(newItems[gi] || {}).desc || ""} onChange={e => setNewItems(n => ({ ...n, [gi]: { ...(n[gi] || {}), desc: e.target.value } }))} style={{ background: C.surface, border: "1px solid " + C.border, color: C.text, borderRadius: 7, padding: "7px 10px", fontSize: 12 }} />
+            <div style={{ display: "flex", gap: 8 }}>
+              <select value={(newItems[gi] || {}).score || "1"} onChange={e => setNewItems(n => ({ ...n, [gi]: { ...(n[gi] || {}), score: e.target.value } }))} style={{ background: C.surface, border: "1px solid " + C.border, color: C.text, borderRadius: 7, padding: "7px 10px", fontSize: 12, fontFamily: "'JetBrains Mono',monospace" }}>
+                {[1,2,3,4,5].map(n => <option key={n} value={n}>+{n}점</option>)}
+              </select>
+              <button onClick={() => addItem(gi)} style={{ flex: 1, padding: "8px 0", borderRadius: 8, border: "none", background: C.blue, color: "#000", fontWeight: 700, fontSize: 13, cursor: "pointer", fontFamily: "'Space Grotesk',sans-serif" }}>추가</button>
+            </div>
+          </div>
+        </Card>
+      ))}
+
+      {/* 그룹 추가 */}
+      <Card>
+        <div style={{ fontSize: 12, color: C.muted, fontWeight: 600, marginBottom: 8 }}>새 그룹 추가</div>
+        <div style={{ display: "flex", gap: 8 }}>
+          <input placeholder="그룹 이름 (예: 온체인 지표)" value={newGroupName} onChange={e => setNewGroupName(e.target.value)} onKeyDown={e => e.key === "Enter" && addGroup()} style={{ flex: 1, background: C.surface2, border: "1px solid " + C.border, color: C.text, borderRadius: 8, padding: "10px 12px", fontSize: 13 }} />
+          <button onClick={addGroup} style={{ padding: "10px 16px", borderRadius: 8, border: "none", background: C.accent, color: "#000", fontWeight: 700, cursor: "pointer", fontFamily: "'Space Grotesk',sans-serif" }}>추가</button>
+        </div>
+      </Card>
+
+      <button onClick={handleSave} style={{ width: "100%", padding: "14px 0", borderRadius: 12, border: "none", background: saved ? C.accent + "80" : C.accent, color: "#000", fontWeight: 700, fontSize: 15, cursor: "pointer", fontFamily: "'Space Grotesk',sans-serif" }}>{saved ? "저장됨 ✓" : "변경사항 저장"}</button>
+    </div>
+  );
+}
+
 // ── 메인 앱 ──────────────────────────────────────────────
+// ── 시드 설정 모달 ────────────────────────────────────────
+function SeedModal({ seed, onSave, onCancel, totalPnl, currentSeed, seedReturn }) {
+  const [initialInput, setInitialInput] = useState(seed.initial > 0 ? String(seed.initial) : "");
+  const [withdrawAmount, setWithdrawAmount] = useState("");
+  const [withdrawMemo, setWithdrawMemo] = useState("");
+  const todayS = new Date().toISOString().split("T")[0];
+
+  const handleSaveInitial = () => {
+    const val = parseFloat(initialInput) || 0;
+    if (val <= 0) return;
+    onSave({ ...seed, initial: val });
+  };
+
+  const handleWithdraw = () => {
+    const amt = parseFloat(withdrawAmount) || 0;
+    if (amt <= 0) return;
+    const newW = { id: Date.now(), amount: amt, memo: withdrawMemo, date: todayS };
+    onSave({ ...seed, withdrawals: [...(seed.withdrawals || []), newW] });
+    setWithdrawAmount(""); setWithdrawMemo("");
+  };
+
+  const handleDeleteWithdrawal = (id) => {
+    onSave({ ...seed, withdrawals: (seed.withdrawals || []).filter(w => w.id !== id) });
+  };
+
+  return (
+    <div onClick={onCancel} style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.85)", zIndex: 1000, display: "flex", alignItems: "flex-end", justifyContent: "center" }}>
+      <div onClick={e => e.stopPropagation()} style={{ background: C.surface, border: "1px solid " + C.border, borderRadius: "16px 16px 0 0", padding: 24, width: "100%", maxWidth: 600, maxHeight: "85vh", overflowY: "auto" }}>
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 20 }}>
+          <div style={{ fontWeight: 700, fontSize: 18 }}>시드 관리</div>
+          <button onClick={onCancel} style={{ background: C.surface2, border: "1px solid " + C.border, color: C.text, width: 30, height: 30, borderRadius: "50%", cursor: "pointer", fontSize: 14 }}>✕</button>
+        </div>
+
+        {/* 현재 시드 현황 */}
+        {seed.initial > 0 && (
+          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 8, marginBottom: 20 }}>
+            {[
+              ["초기 시드", seed.initial.toFixed(2) + " USDT", C.muted],
+              ["누적 손익", (totalPnl >= 0 ? "+" : "") + totalPnl.toFixed(2) + " USDT", totalPnl >= 0 ? C.accent : C.red],
+              ["현재 시드", currentSeed.toFixed(2) + " USDT", currentSeed >= seed.initial ? C.accent : C.red],
+            ].map(([label, val, color]) => (
+              <div key={label} style={{ padding: "12px", background: C.surface2, borderRadius: 10, textAlign: "center" }}>
+                <div style={{ fontSize: 9, color: C.muted, marginBottom: 4, fontWeight: 600 }}>{label}</div>
+                <div style={{ fontFamily: "'JetBrains Mono',monospace", fontSize: 12, fontWeight: 700, color }}>{val}</div>
+              </div>
+            ))}
+          </div>
+        )}
+
+        {/* 초기 시드 설정 */}
+        <div style={{ marginBottom: 20 }}>
+          <div style={{ fontSize: 12, color: C.muted, fontWeight: 600, marginBottom: 8, letterSpacing: 1 }}>초기 시드 (USDT)</div>
+          <div style={{ display: "flex", gap: 8 }}>
+            <input type="number" value={initialInput} onChange={e => setInitialInput(e.target.value)} placeholder="예: 1000" style={{ flex: 1, background: C.surface2, border: "1px solid " + C.border, color: C.text, borderRadius: 10, padding: "12px 14px", fontFamily: "'JetBrains Mono',monospace", fontSize: 15 }} />
+            <button onClick={handleSaveInitial} style={{ padding: "12px 18px", borderRadius: 10, border: "none", background: C.accent, color: "#000", fontWeight: 700, cursor: "pointer", fontFamily: "'Space Grotesk',sans-serif", whiteSpace: "nowrap" }}>저장</button>
+          </div>
+        </div>
+
+        {/* 출금 기록 */}
+        <div>
+          <div style={{ fontSize: 12, color: C.muted, fontWeight: 600, marginBottom: 8, letterSpacing: 1 }}>출금 기록 (USDT)</div>
+          <div style={{ display: "flex", flexDirection: "column", gap: 8, marginBottom: 10 }}>
+            <input type="number" value={withdrawAmount} onChange={e => setWithdrawAmount(e.target.value)} placeholder="출금 금액 (USDT)" style={{ background: C.surface2, border: "1px solid " + C.border, color: C.text, borderRadius: 10, padding: "10px 14px", fontFamily: "'JetBrains Mono',monospace", fontSize: 14 }} />
+            <div style={{ display: "flex", gap: 8 }}>
+              <input value={withdrawMemo} onChange={e => setWithdrawMemo(e.target.value)} placeholder="메모 (선택)" style={{ flex: 1, background: C.surface2, border: "1px solid " + C.border, color: C.text, borderRadius: 10, padding: "10px 14px", fontSize: 13 }} />
+              <button onClick={handleWithdraw} disabled={!withdrawAmount} style={{ padding: "10px 16px", borderRadius: 10, border: "none", background: parseFloat(withdrawAmount) > 0 ? C.red : C.surface2, color: parseFloat(withdrawAmount) > 0 ? "#fff" : C.muted, fontWeight: 700, cursor: "pointer", fontFamily: "'Space Grotesk',sans-serif", whiteSpace: "nowrap" }}>출금 추가</button>
+            </div>
+          </div>
+
+          {/* 출금 내역 */}
+          {(seed.withdrawals || []).length > 0 && (
+            <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+              <div style={{ fontSize: 11, color: C.muted, marginBottom: 2 }}>출금 내역</div>
+              {[...(seed.withdrawals || [])].reverse().map(w => (
+                <div key={w.id} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "10px 12px", background: C.surface2, borderRadius: 8, border: "1px solid " + C.border }}>
+                  <div>
+                    <div style={{ fontFamily: "'JetBrains Mono',monospace", fontSize: 14, fontWeight: 700, color: C.red }}>-{w.amount.toFixed(2)} USDT</div>
+                    <div style={{ fontSize: 11, color: C.muted }}>{w.date}{w.memo ? " · " + w.memo : ""}</div>
+                  </div>
+                  <button onClick={() => handleDeleteWithdrawal(w.id)} style={{ background: "none", border: "none", color: C.muted, cursor: "pointer", fontSize: 16, padding: "4px 8px" }}>✕</button>
+                </div>
+              ))}
+              <div style={{ padding: "8px 12px", background: "rgba(255,77,109,0.06)", borderRadius: 8, border: "1px solid " + C.red + "30", textAlign: "center" }}>
+                <span style={{ fontFamily: "'JetBrains Mono',monospace", fontSize: 13, color: C.red }}>총 출금: -{(seed.withdrawals || []).reduce((a, w) => a + w.amount, 0).toFixed(2)} USDT</span>
+              </div>
+            </div>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
 export default function App() {
   const [tab, setTab] = useState("positions");
   const [positions, setPositions] = useState([]);
@@ -606,17 +795,34 @@ export default function App() {
   const [showWizard, setShowWizard] = useState(false);
   const [closeTarget, setCloseTarget] = useState(null);
   const [detailPos, setDetailPos] = useState(null);
+  const [seed, setSeed] = useState({ initial: 0, withdrawals: [] });
+  const [showSeedModal, setShowSeedModal] = useState(false);
+  const [checklist, setChecklist] = useState(ANALYSIS_ITEMS);
 
   useEffect(() => {
     const load = async () => {
       try {
         const d = await loadData("positions");
         if (d) setPositions(typeof d === "string" ? JSON.parse(d) : d);
+        const s = await loadData("seed");
+        if (s) setSeed(typeof s === "string" ? JSON.parse(s) : s);
+        const cl = await loadData("checklist");
+        if (cl) setChecklist(typeof cl === "string" ? JSON.parse(cl) : cl);
       } catch (e) {}
       setLoaded(true);
     };
     load();
   }, []);
+
+  const saveSeed = async (newSeed) => {
+    setSeed(newSeed);
+    try { await saveData("seed", JSON.stringify(newSeed)); } catch (e) {}
+  };
+
+  const saveChecklist = async (newCl) => {
+    setChecklist(newCl);
+    try { await saveData("checklist", JSON.stringify(newCl)); } catch (e) {}
+  };
 
   const save = async (newPositions) => {
     setPositions(newPositions);
@@ -641,6 +847,12 @@ export default function App() {
   const active = positions.filter(p => p.status === "active");
   const closed = positions.filter(p => p.status !== "active");
 
+  // 시드 계산
+  const totalPnl = closed.reduce((a, p) => a + (p.realPnl || 0), 0);
+  const totalWithdrawals = (seed.withdrawals || []).reduce((a, w) => a + w.amount, 0);
+  const currentSeed = seed.initial + totalPnl - totalWithdrawals;
+  const seedReturn = seed.initial > 0 ? ((currentSeed - seed.initial) / seed.initial * 100) : 0;
+
   if (!loaded) return (
     <div style={{ background: C.bg, minHeight: "100vh", display: "flex", alignItems: "center", justifyContent: "center", flexDirection: "column", gap: 12 }}>
       <style>{CSS}</style>
@@ -654,19 +866,55 @@ export default function App() {
       <style>{CSS}</style>
 
       {/* 헤더 */}
-      <div style={{ padding: "20px 20px 0", borderBottom: "1px solid " + C.border, background: C.surface, position: "sticky", top: 0, zIndex: 50 }}>
-        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 16 }}>
-          <div>
-            <div style={{ fontSize: 22, fontWeight: 700, letterSpacing: -0.5 }}>TradeGate <span style={{ fontSize: 12, color: C.muted, fontWeight: 400 }}>코인 선물</span></div>
-            <div style={{ fontSize: 11, color: C.muted, marginTop: 2 }}>포지션 {active.length}개 진행 중</div>
-          </div>
+      <div style={{ padding: "16px 16px 0", borderBottom: "1px solid " + C.border, background: C.surface, position: "sticky", top: 0, zIndex: 50 }}>
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 12 }}>
+          <div style={{ fontSize: 20, fontWeight: 700, letterSpacing: -0.5 }}>TradeGate <span style={{ fontSize: 11, color: C.muted, fontWeight: 400 }}>코인 선물</span></div>
           {!showWizard && (
-            <button onClick={() => setShowWizard(true)} style={{ padding: "10px 18px", borderRadius: 10, border: "none", background: C.accent, color: "#000", fontWeight: 700, fontSize: 13, cursor: "pointer", fontFamily: "'Space Grotesk',sans-serif" }}>+ 새 분석</button>
+            <button onClick={() => setShowWizard(true)} style={{ padding: "9px 16px", borderRadius: 10, border: "none", background: C.accent, color: "#000", fontWeight: 700, fontSize: 13, cursor: "pointer", fontFamily: "'Space Grotesk',sans-serif" }}>+ 새 분석</button>
           )}
         </div>
+
+        {/* 시드 트래킹 바 */}
+        {!showWizard && (
+          <div onClick={() => setShowSeedModal(true)} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "10px 14px", marginBottom: 12, background: C.surface2, borderRadius: 10, border: "1px solid " + C.border, cursor: "pointer" }}>
+            <div style={{ display: "flex", gap: 20, alignItems: "center" }}>
+              <div>
+                <div style={{ fontSize: 9, color: C.muted, fontWeight: 600, letterSpacing: 1, marginBottom: 2 }}>현재 시드</div>
+                <div style={{ fontFamily: "'JetBrains Mono',monospace", fontSize: 16, fontWeight: 700, color: seed.initial === 0 ? C.muted : currentSeed >= seed.initial ? C.accent : C.red }}>
+                  {seed.initial === 0 ? "미설정" : currentSeed.toFixed(2) + " USDT"}
+                </div>
+              </div>
+              {seed.initial > 0 && (
+                <>
+                  <div style={{ width: 1, height: 28, background: C.border }} />
+                  <div>
+                    <div style={{ fontSize: 9, color: C.muted, fontWeight: 600, letterSpacing: 1, marginBottom: 2 }}>초기 시드</div>
+                    <div style={{ fontFamily: "'JetBrains Mono',monospace", fontSize: 13, color: C.muted }}>{seed.initial.toFixed(2)} USDT</div>
+                  </div>
+                  <div style={{ width: 1, height: 28, background: C.border }} />
+                  <div>
+                    <div style={{ fontSize: 9, color: C.muted, fontWeight: 600, letterSpacing: 1, marginBottom: 2 }}>수익률</div>
+                    <div style={{ fontFamily: "'JetBrains Mono',monospace", fontSize: 13, fontWeight: 700, color: seedReturn >= 0 ? C.accent : C.red }}>
+                      {seedReturn >= 0 ? "+" : ""}{seedReturn.toFixed(2)}%
+                    </div>
+                  </div>
+                </>
+              )}
+            </div>
+            <div style={{ display: "flex", flexDirection: "column", alignItems: "flex-end", gap: 2 }}>
+              {seed.initial > 0 && totalPnl !== 0 && (
+                <div style={{ fontFamily: "'JetBrains Mono',monospace", fontSize: 12, color: totalPnl >= 0 ? C.accent : C.red, fontWeight: 600 }}>
+                  {totalPnl >= 0 ? "+" : ""}{totalPnl.toFixed(2)} USDT
+                </div>
+              )}
+              <div style={{ fontSize: 10, color: C.muted }}>탭하여 수정 →</div>
+            </div>
+          </div>
+        )}
+
         {!showWizard && (
           <div style={{ display: "flex", gap: 0 }}>
-            {[["positions", "포지션"], ["history", "기록"], ["stats", "통계"]].map(([id, label]) => (
+            {[["positions", "포지션"], ["history", "기록"], ["stats", "통계"], ["settings", "설정"]].map(([id, label]) => (
               <button key={id} onClick={() => setTab(id)} style={{ flex: 1, padding: "10px 0", background: "none", border: "none", borderBottom: "2px solid " + (tab === id ? C.accent : "transparent"), color: tab === id ? C.accent : C.muted, fontWeight: tab === id ? 700 : 400, fontSize: 13, cursor: "pointer", fontFamily: "'Space Grotesk',sans-serif" }}>{label}</button>
             ))}
           </div>
@@ -676,7 +924,7 @@ export default function App() {
       {/* 컨텐츠 */}
       <div style={{ padding: "20px 16px", paddingBottom: 40 }}>
         {showWizard ? (
-          <AnalysisWizard onComplete={handleComplete} onCancel={() => setShowWizard(false)} />
+          <AnalysisWizard onComplete={handleComplete} onCancel={() => setShowWizard(false)} checklist={checklist} />
         ) : tab === "positions" ? (
           <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
             {active.length === 0 ? (
@@ -697,13 +945,18 @@ export default function App() {
               : closed.map(p => <PositionCard key={p.id} pos={p} onClose={setCloseTarget} onView={setDetailPos} />)
             }
           </div>
-        ) : (
+        ) : tab === "stats" ? (
           <StatsView positions={positions} />
+        ) : (
+          <ChecklistSettings checklist={checklist} onSave={saveChecklist} />
         )}
       </div>
 
       {/* 청산 모달 */}
       {closeTarget && <CloseModal pos={closeTarget} onSave={handleClose} onCancel={() => setCloseTarget(null)} />}
+
+      {/* 시드 설정 모달 */}
+      {showSeedModal && <SeedModal seed={seed} onSave={saveSeed} onCancel={() => setShowSeedModal(false)} totalPnl={totalPnl} currentSeed={currentSeed} seedReturn={seedReturn} />}
 
       {/* 상세 모달 */}
       {detailPos && (
