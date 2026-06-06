@@ -174,13 +174,14 @@ function AnalysisWizard({ onComplete, onCancel, initialData, checklist }) {
   const slN = parseFloat(sl) || 0;
   const tpN = parseFloat(tp) || 0;
   const levN = parseFloat(lev) || 1;
-  const balN = parseFloat(balance) || 0;
-  const riskN = parseFloat(riskPct) || 1;
-  const maxLoss = balN * (riskN / 100);
+  const tradeSizeN = parseFloat(balance) || 0; // balance 필드를 실제 매매금액으로 재사용
   const slDist = entryN > 0 && slN > 0 ? Math.abs(entryN - slN) / entryN : 0;
-  const posSizeUsdt = slDist > 0 ? (maxLoss / (slDist * levN)) : 0;
+  const maxLoss = tradeSizeN * slDist * levN; // 실제 손실 금액
+  const posSizeUsdt = tradeSizeN; // 직접 입력한 매매 금액
   const rrRatio = entryN > 0 && slN > 0 && tpN > 0
     ? Math.abs(tpN - entryN) / Math.abs(entryN - slN) : 0;
+  const expectedProfit = tradeSizeN > 0 && entryN > 0 && tpN > 0
+    ? tradeSizeN * Math.abs(tpN - entryN) / entryN * levN : 0;
 
   const getAiAdvice = async () => {
     setAiLoading(true); setAiAdvice("");
@@ -391,19 +392,11 @@ function AnalysisWizard({ onComplete, onCancel, initialData, checklist }) {
                 ))}
               </div>
               <div style={{ height: 1, background: C.border }} />
-              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
-                <div>
-                  <div style={{ fontSize: 11, color: C.muted, marginBottom: 5, fontWeight: 600, letterSpacing: 0.5 }}>계좌 잔고 (USDT)</div>
-                  <input type="number" value={balance} onChange={e => setBalance(e.target.value)} placeholder="예: 1000" style={{ width: "100%", background: C.surface2, border: "1px solid " + C.border, color: C.text, borderRadius: 8, padding: "10px 12px", fontFamily: "'JetBrains Mono',monospace", fontSize: 14 }} />
-                </div>
-                <div>
-                  <div style={{ fontSize: 11, color: C.muted, marginBottom: 5, fontWeight: 600, letterSpacing: 0.5 }}>리스크 % (계좌 대비)</div>
-                  <div style={{ display: "flex", gap: 6 }}>
-                    {["0.5", "1", "1.5", "2", "3"].map(v => (
-                      <button key={v} onClick={() => setRiskPct(v)} style={{ flex: 1, padding: "10px 0", borderRadius: 8, border: "1px solid " + (riskPct === v ? C.yellow : C.border), background: riskPct === v ? C.yellowDim : "transparent", color: riskPct === v ? C.yellow : C.muted, fontSize: 11, fontWeight: 700, cursor: "pointer", fontFamily: "'JetBrains Mono',monospace" }}>{v}%</button>
-                    ))}
-                  </div>
-                </div>
+              {/* 실제 매매 금액 */}
+              <div>
+                <div style={{ fontSize: 11, color: C.muted, marginBottom: 5, fontWeight: 600, letterSpacing: 0.5 }}>실제 매매 금액 (USDT)</div>
+                <input type="number" value={balance} onChange={e => setBalance(e.target.value)} placeholder="예: 100" style={{ width: "100%", background: C.surface2, border: "1px solid " + C.border, color: C.text, borderRadius: 8, padding: "12px 14px", fontFamily: "'JetBrains Mono',monospace", fontSize: 16, fontWeight: 600 }} />
+                <div style={{ fontSize: 11, color: C.muted, marginTop: 5 }}>실제로 투입하는 증거금 금액 (레버리지 적용 전)</div>
               </div>
 
               {/* 계산 결과 */}
@@ -413,8 +406,8 @@ function AnalysisWizard({ onComplete, onCancel, initialData, checklist }) {
                   <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
                     {[
                       ["손익비", rrRatio > 0 ? "1 : " + rrRatio.toFixed(2) : "-", rrRatio >= 2 ? C.accent : rrRatio >= 1 ? C.yellow : C.red],
-                      ["최대 손실", balN > 0 ? "-" + maxLoss.toFixed(2) + " USDT" : "-", C.red],
-                      ["권장 포지션", posSizeUsdt > 0 ? posSizeUsdt.toFixed(2) + " USDT" : "-", C.accent],
+                      ["최대 손실", tradeSizeN > 0 ? "-" + maxLoss.toFixed(2) + " USDT" : "-", C.red],
+                      ["예상 수익", tradeSizeN > 0 && expectedProfit > 0 ? "+" + expectedProfit.toFixed(2) + " USDT" : "-", C.accent],
                       ["손절 거리", slDist > 0 ? (slDist * 100).toFixed(2) + "%" : "-", C.muted],
                     ].map(([label, val, color]) => (
                       <div key={label} style={{ background: C.surface2, borderRadius: 8, padding: "10px 12px" }}>
