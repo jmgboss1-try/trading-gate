@@ -1239,7 +1239,6 @@ export default function App() {
               </>;
             })()}
           </div>
-          </div>
         ) : tab === "history" ? (
           <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
             {closed.length === 0
