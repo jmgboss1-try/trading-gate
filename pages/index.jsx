@@ -188,7 +188,7 @@ function AnalysisWizard({ onComplete, onCancel, initialData, checklist }) {
     const checkedItems = allItems.filter(i => checked[i.id]).map(i => i.label).join(", ");
     const unchecked = allItems.filter(i => !checked[i.id]).map(i => i.label).join(", ");
     const prompt = `코인 선물 트레이딩 전문가로서 다음 진입 분석을 검토하고 한국어로 간결하게 피드백해주세요 (3-5문장):
-종목: ${symbol} / 방향: ${dir} / 타임프레임: ${tf} / 레버리지: ${lev}x
+종목: ${symbol} / 방향: ${dir} / 레버리지: ${lev}x / 체결상태: ${fillType}
 충족된 조건: ${checkedItems || "없음"}
 미충족 조건: ${unchecked || "없음"}
 진입가: ${entry} / 손절가: ${sl} / 목표가: ${tp} / 손익비: ${rrRatio.toFixed(2)}
@@ -493,7 +493,7 @@ function AnalysisWizard({ onComplete, onCancel, initialData, checklist }) {
           <div style={{ padding: 20, borderRadius: 14, border: "2px solid " + (passed ? C.accent : C.red), background: passed ? "rgba(99,255,180,0.05)" : "rgba(255,77,109,0.05)", textAlign: "center", animation: passed ? "glow 3s infinite" : "none" }}>
             <div style={{ fontSize: 32, marginBottom: 8 }}>{passed ? "🟢" : "🔴"}</div>
             <div style={{ fontSize: 22, fontWeight: 700, color: passed ? C.accent : C.red }}>{passed ? "진입 허가" : "진입 불가"}</div>
-            <div style={{ fontSize: 13, color: C.muted, marginTop: 4 }}>분석 점수 {score}/{MAX_SCORE}점 (기준 {THRESHOLD}점)</div>
+            <div style={{ fontSize: 13, color: C.muted, marginTop: 4 }}>분석 점수 {score}/{maxScore}점 (기준 {THRESHOLD}점)</div>
           </div>
 
           {/* 요약 */}
@@ -502,14 +502,14 @@ function AnalysisWizard({ onComplete, onCancel, initialData, checklist }) {
               {[
                 ["종목", symbol === "기타" ? customSymbol : symbol],
                 ["방향", dir, dir === "롱" ? C.long : C.short],
-                ["타임프레임", tf],
+                ["체결 상태", fillType === "full" ? "완전 체결" : fillType === "partial" ? "부분 체결" : "미체결", fillType === "full" ? C.accent : fillType === "partial" ? C.yellow : C.muted],
                 ["레버리지", lev + "x"],
                 ["진입가", entry ? entry + " USDT" : "-"],
                 ["손절가", sl ? sl + " USDT" : "-"],
                 ["목표가", tp ? tp + " USDT" : "-"],
                 ["손익비", rrRatio > 0 ? "1:" + rrRatio.toFixed(2) : "-", rrRatio >= 2 ? C.accent : C.yellow],
-                ["권장 포지션", posSizeUsdt > 0 ? posSizeUsdt.toFixed(2) + " USDT" : "-"],
-                ["최대 손실", maxLoss > 0 ? maxLoss.toFixed(2) + " USDT" : "-", C.red],
+                ["투자 금액", balance ? balance + " USDT" : "-"],
+                ["최대 손실", maxLoss > 0 ? "-" + maxLoss.toFixed(2) + " USDT" : "-", C.red],
               ].map(([label, val, color]) => (
                 <div key={label} style={{ background: C.surface2, borderRadius: 8, padding: "10px 12px" }}>
                   <div style={{ fontSize: 10, color: C.muted, marginBottom: 2 }}>{label}</div>
