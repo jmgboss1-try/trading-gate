@@ -93,31 +93,21 @@ function Card({ children, style, accent }) {
   );
 }
 
-function ScoreMeter({ score, max, threshold }) {
+function ScoreMeter({ score, max }) {
   const pct = Math.min(100, (score / max) * 100);
-  const thresholdPct = (threshold / max) * 100;
-  const passed = score >= threshold;
-  const color = passed ? C.accent : score >= threshold * 0.7 ? C.yellow : C.red;
+  const color = score >= max * 0.7 ? C.accent : score >= max * 0.4 ? C.yellow : C.muted;
   return (
     <div>
       <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 8, alignItems: "flex-end" }}>
-        <span style={{ fontSize: 13, color: C.muted }}>분석 점수</span>
+        <span style={{ fontSize: 13, color: C.muted }}>분석 점수 (참고용)</span>
         <span style={{ fontFamily: "'JetBrains Mono',monospace", fontSize: 24, fontWeight: 700, color }}>
           {score}<span style={{ fontSize: 14, color: C.muted }}>/{max}</span>
         </span>
       </div>
-      <div style={{ height: 10, background: C.surface2, borderRadius: 5, overflow: "visible", position: "relative" }}>
+      <div style={{ height: 10, background: C.surface2, borderRadius: 5, overflow: "hidden" }}>
         <div style={{ height: "100%", width: pct + "%", background: "linear-gradient(90deg," + color + "," + color + "99)", borderRadius: 5, transition: "width 0.5s ease" }} />
-        {/* 임계값 마커 */}
-        <div style={{ position: "absolute", top: -4, left: thresholdPct + "%", width: 2, height: 18, background: C.yellow, borderRadius: 1 }} />
-        <div style={{ position: "absolute", top: -20, left: thresholdPct + "%", transform: "translateX(-50%)", fontSize: 9, color: C.yellow, whiteSpace: "nowrap" }}>최소 {threshold}점</div>
       </div>
-      <div style={{ marginTop: 12, display: "flex", alignItems: "center", gap: 8 }}>
-        <div style={{ width: 10, height: 10, borderRadius: "50%", background: passed ? C.accent : C.red, boxShadow: passed ? "0 0 10px " + C.accent : "0 0 10px " + C.red, animation: "pulse 2s infinite" }} />
-        <span style={{ fontSize: 13, fontWeight: 600, color: passed ? C.accent : C.red }}>
-          {passed ? "✓ 진입 가능" : "✗ 근거 부족 — 더 확인하세요"}
-        </span>
-      </div>
+      <div style={{ marginTop: 8, fontSize: 11, color: C.muted }}>근거가 많을수록 확실성이 높아집니다</div>
     </div>
   );
 }
@@ -165,9 +155,10 @@ function AnalysisWizard({ onComplete, onCancel, initialData, checklist }) {
     setImgIdx(idx => Math.max(0, idx - 1));
   };
 
-  const toggle = id => setChecked(c => ({ ...c, [id]: !c[id] }));
-  const score = allItems.filter(i => checked[i.id]).reduce((a, i) => a + i.score, 0);
-  const passed = score >= THRESHOLD;
+  const toggle = id => setChecked(c => ({ ...c, [id]: c[id]?.on ? { on: false, comment: c[id]?.comment || "" } : { on: true, comment: c[id]?.comment || "" } }));
+  const setComment = (id, comment) => setChecked(c => ({ ...c, [id]: { ...c[id], comment } }));
+  const isChecked = id => !!checked[id]?.on;
+  const score = allItems.filter(i => isChecked(i.id)).reduce((a, i) => a + i.score, 0);
 
   // 리스크 계산
   const entryN = parseFloat(entry) || 0;
@@ -225,7 +216,8 @@ function AnalysisWizard({ onComplete, onCancel, initialData, checklist }) {
       simWin: Math.round(simWin * 100) / 100,
       simLoss: Math.round(simLoss * 100) / 100,
       status: fillType === "unfilled" ? "unfilled" : "active",
-      images
+      images,
+      checklist
     });
   };
 
@@ -339,25 +331,40 @@ function AnalysisWizard({ onComplete, onCancel, initialData, checklist }) {
               <div style={{ fontFamily: "'JetBrains Mono',monospace", fontSize: 12, color: C.muted }}>{symbol === "기타" ? customSymbol : symbol}</div>
             </div>
           </div>
-          <ScoreMeter score={score} max={maxScore} threshold={THRESHOLD} />
+          <ScoreMeter score={score} max={maxScore} />
           {checklist.map(group => (
             <Card key={group.group} accent={C.blue}>
               <div style={{ fontSize: 12, color: C.blue, fontWeight: 700, marginBottom: 14, display: "flex", alignItems: "center", gap: 6 }}><span>{group.icon}</span>{group.group}</div>
               <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
                 {group.items.map(item => {
-                  const isChecked = !!checked[item.id];
+                  const on = isChecked(item.id);
+                  const comment = checked[item.id]?.comment || "";
                   return (
-                    <div key={item.id} onClick={() => toggle(item.id)} style={{ display: "flex", alignItems: "flex-start", gap: 12, padding: "12px 14px", borderRadius: 10, background: isChecked ? C.accentDim : C.surface2, border: "1px solid " + (isChecked ? C.accent + "60" : C.border), cursor: "pointer", transition: "all 0.2s" }}>
-                      <div style={{ width: 22, height: 22, borderRadius: 6, border: "2px solid " + (isChecked ? C.accent : C.muted), background: isChecked ? C.accent : "transparent", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0, marginTop: 1, transition: "all 0.2s" }}>
-                        {isChecked && <span style={{ color: "#000", fontSize: 13, fontWeight: 700 }}>✓</span>}
-                      </div>
-                      <div style={{ flex: 1 }}>
-                        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 2 }}>
-                          <span style={{ fontWeight: 600, fontSize: 14, color: isChecked ? C.accent : C.text }}>{item.label}</span>
-                          <span style={{ fontFamily: "'JetBrains Mono',monospace", fontSize: 11, color: isChecked ? C.accent : C.muted, background: isChecked ? C.accentDim : C.surface, padding: "1px 8px", borderRadius: 10, border: "1px solid " + (isChecked ? C.accent + "40" : C.border) }}>+{item.score}점</span>
+                    <div key={item.id} style={{ borderRadius: 10, background: on ? C.accentDim : C.surface2, border: "1px solid " + (on ? C.accent + "60" : C.border), overflow: "hidden", transition: "all 0.2s" }}>
+                      <div onClick={() => toggle(item.id)} style={{ display: "flex", alignItems: "flex-start", gap: 12, padding: "12px 14px", cursor: "pointer" }}>
+                        <div style={{ width: 22, height: 22, borderRadius: 6, border: "2px solid " + (on ? C.accent : C.muted), background: on ? C.accent : "transparent", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0, marginTop: 1, transition: "all 0.2s" }}>
+                          {on && <span style={{ color: "#000", fontSize: 13, fontWeight: 700 }}>✓</span>}
                         </div>
-                        <div style={{ fontSize: 11, color: C.muted, lineHeight: 1.4 }}>{item.desc}</div>
+                        <div style={{ flex: 1 }}>
+                          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 2 }}>
+                            <span style={{ fontWeight: 600, fontSize: 14, color: on ? C.accent : C.text }}>{item.label}</span>
+                            <span style={{ fontFamily: "'JetBrains Mono',monospace", fontSize: 11, color: on ? C.accent : C.muted, background: on ? C.accentDim : C.surface, padding: "1px 8px", borderRadius: 10, border: "1px solid " + (on ? C.accent + "40" : C.border) }}>+{item.score}점</span>
+                          </div>
+                          <div style={{ fontSize: 11, color: C.muted, lineHeight: 1.4 }}>{item.desc}</div>
+                        </div>
                       </div>
+                      {/* 코멘트 입력창 - 체크 시 펼쳐짐 */}
+                      {on && (
+                        <div style={{ padding: "0 14px 12px 48px" }}>
+                          <input
+                            value={comment}
+                            onChange={e => { e.stopPropagation(); setComment(item.id, e.target.value); }}
+                            onClick={e => e.stopPropagation()}
+                            placeholder="근거 코멘트 (선택) — 예: 0.786 + 1.13 겹치는 구간"
+                            style={{ width: "100%", background: "rgba(0,0,0,0.2)", border: "1px solid " + C.accent + "30", color: C.text, borderRadius: 7, padding: "6px 10px", fontSize: 12, fontFamily: "'Space Grotesk',sans-serif" }}
+                          />
+                        </div>
+                      )}
                     </div>
                   );
                 })}
@@ -366,8 +373,8 @@ function AnalysisWizard({ onComplete, onCancel, initialData, checklist }) {
           ))}
           <div style={{ display: "flex", gap: 10 }}>
             <button onClick={() => setStep(2)} style={{ flex: 1, padding: "13px 0", borderRadius: 12, border: "1px solid " + C.border, background: "transparent", color: C.muted, fontWeight: 600, fontSize: 14, cursor: "pointer", fontFamily: "'Space Grotesk',sans-serif" }}>← 이전</button>
-            <button onClick={() => setStep(4)} style={{ flex: 2, padding: "13px 0", borderRadius: 12, border: "none", background: passed ? C.accent : C.surface2, color: passed ? "#000" : C.muted, fontWeight: 700, fontSize: 14, cursor: "pointer", fontFamily: "'Space Grotesk',sans-serif" }}>
-              {passed ? "다음 → 리스크 계산 ✓" : `점수 부족 (${score}/${THRESHOLD}점) — 계속 진행`}
+            <button onClick={() => setStep(4)} style={{ flex: 2, padding: "13px 0", borderRadius: 12, border: "none", background: C.accent, color: "#000", fontWeight: 700, fontSize: 14, cursor: "pointer", fontFamily: "'Space Grotesk',sans-serif" }}>
+              다음 → 리스크 계산 ({score}점 모음)
             </button>
           </div>
         </div>
@@ -489,11 +496,10 @@ function AnalysisWizard({ onComplete, onCancel, initialData, checklist }) {
             <div style={{ fontSize: 13, color: C.muted }}>분석을 검토하고 진입 여부를 결정하세요</div>
           </div>
 
-          {/* 판정 배너 */}
-          <div style={{ padding: 20, borderRadius: 14, border: "2px solid " + (passed ? C.accent : C.red), background: passed ? "rgba(99,255,180,0.05)" : "rgba(255,77,109,0.05)", textAlign: "center", animation: passed ? "glow 3s infinite" : "none" }}>
-            <div style={{ fontSize: 32, marginBottom: 8 }}>{passed ? "🟢" : "🔴"}</div>
-            <div style={{ fontSize: 22, fontWeight: 700, color: passed ? C.accent : C.red }}>{passed ? "진입 허가" : "진입 불가"}</div>
-            <div style={{ fontSize: 13, color: C.muted, marginTop: 4 }}>분석 점수 {score}/{maxScore}점 (기준 {THRESHOLD}점)</div>
+          {/* 점수 요약 */}
+          <div style={{ padding: 20, borderRadius: 14, border: "1px solid " + C.border, background: C.surface2, textAlign: "center" }}>
+            <div style={{ fontFamily: "'JetBrains Mono',monospace", fontSize: 36, fontWeight: 700, color: score >= maxScore * 0.7 ? C.accent : score >= maxScore * 0.4 ? C.yellow : C.muted }}>{score}</div>
+            <div style={{ fontSize: 13, color: C.muted, marginTop: 4 }}>/{maxScore}점 · 근거 {allItems.filter(i => isChecked(i.id)).length}개 수집</div>
           </div>
 
           {/* 요약 */}
@@ -536,8 +542,8 @@ function AnalysisWizard({ onComplete, onCancel, initialData, checklist }) {
 
           <div style={{ display: "flex", gap: 10 }}>
             <button onClick={() => setStep(4)} style={{ flex: 1, padding: "13px 0", borderRadius: 12, border: "1px solid " + C.border, background: "transparent", color: C.muted, fontWeight: 600, fontSize: 14, cursor: "pointer", fontFamily: "'Space Grotesk',sans-serif" }}>← 이전</button>
-            <button onClick={handleComplete} style={{ flex: 2, padding: "13px 0", borderRadius: 12, border: "none", background: passed ? C.accent : C.surface2, color: passed ? "#000" : C.muted, fontWeight: 700, fontSize: 14, cursor: "pointer", fontFamily: "'Space Grotesk',sans-serif" }}>
-              {passed ? "✓ 분석 저장 & 포지션 오픈" : "⚠️ 비허가 상태로 저장"}
+            <button onClick={handleComplete} style={{ flex: 2, padding: "13px 0", borderRadius: 12, border: "none", background: C.accent, color: "#000", fontWeight: 700, fontSize: 14, cursor: "pointer", fontFamily: "'Space Grotesk',sans-serif" }}>
+              ✓ 분석 저장 & 포지션 오픈
             </button>
           </div>
         </div>
@@ -554,7 +560,7 @@ function PositionCard({ pos, onClose, onView, onUpdateQty }) {
   const dirColor = pos.dir === "롱" ? C.long : C.short;
   const isUnfilled = pos.fillType === "unfilled" || pos.status === "unfilled";
   const isPartial = pos.fillType === "partial" && pos.status === "active";
-  const borderColor = isUnfilled ? C.muted : isPartial ? C.yellow : pos.passed ? (pos.status === "active" ? C.blue : pnlColor) : C.border;
+  const borderColor = isUnfilled ? C.muted : isPartial ? C.yellow : pos.status === "active" ? C.blue : pnlColor;
 
   return (
     <div style={{ background: C.surface, border: "1px solid " + borderColor + (pos.status === "active" ? "80" : "40"), borderRadius: 14, overflow: "hidden", transition: "all 0.2s" }}>
@@ -568,7 +574,6 @@ function PositionCard({ pos, onClose, onView, onUpdateQty }) {
               <span style={{ fontSize: 10, color: C.muted }}>{pos.lev}x</span>
                   {isUnfilled && <span style={{ fontSize: 10, padding: "1px 6px", borderRadius: 8, background: "rgba(90,96,128,0.2)", color: C.muted, border: "1px solid " + C.border }}>미체결</span>}
                   {isPartial && <span style={{ fontSize: 10, padding: "1px 6px", borderRadius: 8, background: C.yellowDim, color: C.yellow, border: "1px solid " + C.yellow + "40" }}>부분체결</span>}
-              {!pos.passed && <span style={{ fontSize: 10, padding: "1px 6px", borderRadius: 8, background: C.redDim, color: C.red, border: "1px solid " + C.red + "40" }}>비허가</span>}
             </div>
                 <div style={{ fontSize: 11, color: C.muted, marginTop: 2 }}>{pos.date} · 점수 {pos.score}점{isPartial && pos.filledQty && pos.targetQty ? <span style={{ color: C.yellow }}> · {pos.filledQty}/{pos.targetQty} 체결</span> : null}</div>
           </div>
@@ -727,11 +732,13 @@ function StatsView({ positions }) {
   const totalPnl = closed.reduce((a, p) => a + (p.realPnl || 0), 0);
   const avgPnl = closed.length ? totalPnl / closed.length : 0;
 
-  // 허가/비허가 비교
-  const permitted = closed.filter(p => p.passed);
-  const notPermitted = closed.filter(p => !p.passed);
-  const permWr = permitted.length ? Math.round(permitted.filter(p => p.status === "win").length / permitted.length * 100) : 0;
-  const notPermWr = notPermitted.length ? Math.round(notPermitted.filter(p => p.status === "win").length / notPermitted.length * 100) : 0;
+  // 점수대별 승률 분석
+  const scoreBands = [
+    { label: "높음", min: Math.round(maxScore * 0.6), color: C.accent },
+    { label: "중간", min: Math.round(maxScore * 0.3), color: C.yellow },
+    { label: "낮음", min: 0, color: C.muted },
+  ];
+  const maxScore2 = closed.reduce((a, p) => Math.max(a, p.score || 0), 0) || 1;
 
   // 누적 손익
   const cumData = [];
@@ -764,27 +771,35 @@ function StatsView({ positions }) {
         ))}
       </div>
 
-      {/* 허가 vs 비허가 비교 */}
-      {(permitted.length > 0 || notPermitted.length > 0) && (
+      {/* 점수대별 승률 */}
+      {closed.length >= 3 && (
         <Card accent={C.accent}>
-          <div style={{ fontSize: 12, color: C.accent, fontWeight: 700, marginBottom: 14 }}>⚡ 체크리스트 효과 분석</div>
-          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
-            <div style={{ padding: 14, background: "rgba(99,255,180,0.06)", borderRadius: 10, border: "1px solid " + C.accent + "30" }}>
-              <div style={{ fontSize: 11, color: C.accent, fontWeight: 700, marginBottom: 8 }}>🟢 허가 진입 ({permitted.length}건)</div>
-              <div style={{ fontFamily: "'JetBrains Mono',monospace", fontSize: 24, fontWeight: 700, color: permWr >= 50 ? C.accent : C.red }}>{permWr}%</div>
-              <div style={{ fontSize: 11, color: C.muted }}>승률</div>
-            </div>
-            <div style={{ padding: 14, background: C.redDim, borderRadius: 10, border: "1px solid " + C.red + "30" }}>
-              <div style={{ fontSize: 11, color: C.red, fontWeight: 700, marginBottom: 8 }}>🔴 비허가 진입 ({notPermitted.length}건)</div>
-              <div style={{ fontFamily: "'JetBrains Mono',monospace", fontSize: 24, fontWeight: 700, color: notPermWr >= 50 ? C.accent : C.red }}>{notPermWr}%</div>
-              <div style={{ fontSize: 11, color: C.muted }}>승률</div>
-            </div>
+          <div style={{ fontSize: 12, color: C.accent, fontWeight: 700, marginBottom: 14 }}>⚡ 점수대별 승률</div>
+          <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+            {(() => {
+              const high = closed.filter(p => (p.score || 0) >= Math.round(maxScore2 * 0.6));
+              const mid = closed.filter(p => (p.score || 0) >= Math.round(maxScore2 * 0.3) && (p.score || 0) < Math.round(maxScore2 * 0.6));
+              const low = closed.filter(p => (p.score || 0) < Math.round(maxScore2 * 0.3));
+              return [
+                ["근거 많음", high, C.accent],
+                ["근거 중간", mid, C.yellow],
+                ["근거 적음", low, C.muted],
+              ].filter(([, arr]) => arr.length > 0).map(([label, arr, color]) => {
+                const wr2 = Math.round(arr.filter(p => p.status === "win").length / arr.length * 100);
+                return (
+                  <div key={label} style={{ display: "flex", alignItems: "center", gap: 12, padding: "10px 14px", background: C.surface2, borderRadius: 10 }}>
+                    <div style={{ width: 8, height: 8, borderRadius: "50%", background: color, flexShrink: 0 }} />
+                    <span style={{ fontSize: 13, color: C.muted, flex: 1 }}>{label} ({arr.length}건)</span>
+                    <div style={{ textAlign: "right" }}>
+                      <div style={{ fontFamily: "'JetBrains Mono',monospace", fontSize: 16, fontWeight: 700, color: wr2 >= 50 ? C.accent : C.red }}>{wr2}%</div>
+                      <div style={{ fontSize: 10, color: C.muted }}>승률</div>
+                    </div>
+                  </div>
+                );
+              });
+            })()}
           </div>
-          {permitted.length > 0 && notPermitted.length > 0 && (
-            <div style={{ marginTop: 12, padding: "10px 14px", background: C.surface2, borderRadius: 10, fontSize: 13, color: permWr > notPermWr ? C.accent : C.muted }}>
-              {permWr > notPermWr ? `✓ 허가 진입 승률이 ${permWr - notPermWr}% 더 높습니다. 체크리스트가 효과적이에요!` : permWr === notPermWr ? "허가/비허가 승률이 같습니다. 데이터가 더 필요해요." : `⚠️ 아직 데이터가 부족합니다. 계속 기록해보세요.`}
-            </div>
-          )}
+          <div style={{ marginTop: 10, fontSize: 11, color: C.muted, lineHeight: 1.6 }}>근거를 많이 모을수록 승률이 높아지는지 확인해보세요</div>
         </Card>
       )}
 
@@ -1273,14 +1288,23 @@ export default function App() {
               <button onClick={() => setDetailPos(null)} style={{ background: C.surface2, border: "1px solid " + C.border, color: C.text, width: 30, height: 30, borderRadius: "50%", cursor: "pointer" }}>✕</button>
             </div>
             <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
-              {/* 체크된 항목 */}
-              <div style={{ fontSize: 12, color: C.muted, fontWeight: 600 }}>충족된 조건</div>
-              {ALL_ITEMS.filter(i => detailPos.checked?.[i.id]).map(item => (
-                <div key={item.id} style={{ padding: "8px 12px", background: C.accentDim, borderRadius: 8, fontSize: 13, color: C.accent, display: "flex", justifyContent: "space-between" }}>
-                  <span>✓ {item.label}</span>
-                  <span style={{ fontFamily: "'JetBrains Mono',monospace" }}>+{item.score}점</span>
-                </div>
-              ))}
+              {/* 체크된 항목 + 코멘트 */}
+              <div style={{ fontSize: 12, color: C.muted, fontWeight: 600 }}>수집된 근거 ({Object.values(detailPos.checked || {}).filter(v => v?.on || v === true).length}개)</div>
+              {Object.entries(detailPos.checked || {}).filter(([, v]) => v?.on || v === true).map(([id, val]) => {
+                const allChecklistItems = (detailPos.checklist || []).flatMap(g => g.items);
+                const item = allChecklistItems.find(i => i.id === id);
+                const comment = val?.comment || "";
+                if (!item) return null;
+                return (
+                  <div key={id} style={{ padding: "10px 12px", background: C.accentDim, borderRadius: 8, border: "1px solid " + C.accent + "30" }}>
+                    <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                      <span style={{ fontSize: 13, color: C.accent, fontWeight: 600 }}>✓ {item.label}</span>
+                      <span style={{ fontFamily: "'JetBrains Mono',monospace", fontSize: 11, color: C.accent }}>+{item.score}점</span>
+                    </div>
+                    {comment && <div style={{ fontSize: 12, color: C.muted, marginTop: 5, paddingTop: 5, borderTop: "1px solid " + C.accent + "20" }}>💬 {comment}</div>}
+                  </div>
+                );
+              })}
               {detailPos.memo && <div style={{ padding: "10px 12px", background: C.surface2, borderRadius: 8, fontSize: 13, color: C.muted }}>{detailPos.memo}</div>}
               {detailPos.aiAdvice && (
                 <div style={{ padding: "12px 14px", background: "rgba(123,47,255,0.08)", border: "1px solid rgba(123,47,255,0.2)", borderRadius: 10, fontSize: 13, lineHeight: 1.7 }}>
