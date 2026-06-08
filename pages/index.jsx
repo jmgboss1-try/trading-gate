@@ -733,11 +733,6 @@ function StatsView({ positions }) {
   const avgPnl = closed.length ? totalPnl / closed.length : 0;
 
   // 점수대별 승률 분석
-  const scoreBands = [
-    { label: "높음", min: Math.round(maxScore * 0.6), color: C.accent },
-    { label: "중간", min: Math.round(maxScore * 0.3), color: C.yellow },
-    { label: "낮음", min: 0, color: C.muted },
-  ];
   const maxScore2 = closed.reduce((a, p) => Math.max(a, p.score || 0), 0) || 1;
 
   // 누적 손익
