@@ -1066,10 +1066,12 @@ export default function App() {
   const [showSeedModal, setShowSeedModal] = useState(false);
   const [checklist, setChecklist] = useState(ANALYSIS_ITEMS);
   const [editableChecklist, setEditableChecklist] = useState(ANALYSIS_ITEMS);
-  const [isDark, setIsDark] = useState(() => {
-    if (typeof window !== "undefined") return localStorage.getItem("tg_theme") !== "light";
-    return true;
-  });
+  const [isDark, setIsDark] = useState(true);
+
+  useEffect(() => {
+    const saved = localStorage.getItem("tg_theme");
+    if (saved === "light") setIsDark(false);
+  }, []);
 
   // 테마 변경 시 C 업데이트
   C = isDark ? { ...DARK } : { ...LIGHT };
@@ -1077,7 +1079,7 @@ export default function App() {
   const toggleTheme = () => {
     setIsDark(d => {
       const next = !d;
-      if (typeof window !== "undefined") localStorage.setItem("tg_theme", next ? "dark" : "light");
+      localStorage.setItem("tg_theme", next ? "dark" : "light");
       return next;
     });
   };
@@ -1153,7 +1155,7 @@ export default function App() {
 
   if (!loaded) return (
     <div style={{ background: C.bg, minHeight: "100vh", display: "flex", alignItems: "center", justifyContent: "center", flexDirection: "column", gap: 12 }}>
-      <style>{CSS}</style>
+      <style>{getCSS(isDark)}</style>
       <div style={{ width: 32, height: 32, border: "3px solid " + C.surface2, borderTopColor: C.accent, borderRadius: "50%", animation: "spin 0.8s linear infinite" }} />
       <div style={{ color: C.muted, fontSize: 13 }}>TradeGate 로딩 중...</div>
     </div>
