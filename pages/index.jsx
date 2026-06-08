@@ -828,9 +828,22 @@ function ChecklistSettings({ checklist, onSave }) {
   const [groups, setGroups] = useState(JSON.parse(JSON.stringify(checklist)));
   const [newGroupName, setNewGroupName] = useState("");
   const [newItems, setNewItems] = useState({});
-  const [editingItem, setEditingItem] = useState(null); // { gi, ii }
+  const [editingItem, setEditingItem] = useState(null);
   const [editDraft, setEditDraft] = useState({});
   const [saved, setSaved] = useState(false);
+  const isFirstRender = useRef(true);
+
+  // groups가 바뀔 때마다 자동 저장 (첫 마운트는 제외)
+  useEffect(() => {
+    if (isFirstRender.current) {
+      isFirstRender.current = false;
+      return;
+    }
+    onSave(groups);
+    setSaved(true);
+    const t = setTimeout(() => setSaved(false), 1200);
+    return () => clearTimeout(t);
+  }, [groups]);
 
   const handleSave = () => {
     onSave(groups);
