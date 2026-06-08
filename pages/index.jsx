@@ -43,21 +43,7 @@ const ANALYSIS_ITEMS = [
 const ALL_ITEMS = ANALYSIS_ITEMS.flatMap(g => g.items);
 
 // ── 스타일 ─────────────────────────────────────────────────
-const CSS = `
-  @import url('https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&family=JetBrains+Mono:wght@400;600&display=swap');
-  * { box-sizing: border-box; margin: 0; padding: 0; -webkit-tap-highlight-color: transparent; }
-  body { background: #060810; color: #e2e8f0; font-family: 'Space Grotesk', sans-serif; min-height: 100vh; }
-  input, select, textarea { font-family: 'Space Grotesk', sans-serif; font-size: 14px; outline: none; }
-  ::-webkit-scrollbar { width: 4px; } ::-webkit-scrollbar-thumb { background: #2a2d3e; border-radius: 2px; }
-  @keyframes fadeUp { from { opacity: 0; transform: translateY(12px); } to { opacity: 1; transform: translateY(0); } }
-  @keyframes pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.5; } }
-  @keyframes spin { to { transform: rotate(360deg); } }
-  @keyframes glow { 0%, 100% { box-shadow: 0 0 20px rgba(99,255,180,0.3); } 50% { box-shadow: 0 0 40px rgba(99,255,180,0.6); } }
-  .fade-up { animation: fadeUp 0.4s ease forwards; }
-  .tab-active { border-bottom: 2px solid #63ffb4 !important; color: #63ffb4 !important; }
-`;
-
-const C = {
+const DARK = {
   bg: "#060810", surface: "#0e1120", surface2: "#161929",
   border: "#1e2235", accent: "#63ffb4", accentDim: "rgba(99,255,180,0.12)",
   red: "#ff4d6d", redDim: "rgba(255,77,109,0.12)",
@@ -65,6 +51,29 @@ const C = {
   blue: "#4da6ff", text: "#e2e8f0", muted: "#5a6080",
   long: "#63ffb4", short: "#ff4d6d",
 };
+const LIGHT = {
+  bg: "#f0f4f8", surface: "#ffffff", surface2: "#f7f9fc",
+  border: "#dde3ed", accent: "#00875a", accentDim: "rgba(0,135,90,0.1)",
+  red: "#d62f4b", redDim: "rgba(214,47,75,0.08)",
+  yellow: "#b45309", yellowDim: "rgba(180,83,9,0.08)",
+  blue: "#1d6fbe", text: "#1a202c", muted: "#718096",
+  long: "#00875a", short: "#d62f4b",
+};
+
+let C = { ...DARK };
+
+const getCSS = (isDark) => `
+  @import url('https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&family=JetBrains+Mono:wght@400;600&display=swap');
+  * { box-sizing: border-box; margin: 0; padding: 0; -webkit-tap-highlight-color: transparent; }
+  body { background: ${isDark ? "#060810" : "#f0f4f8"}; color: ${isDark ? "#e2e8f0" : "#1a202c"}; font-family: 'Space Grotesk', sans-serif; min-height: 100vh; transition: background 0.2s, color 0.2s; }
+  input, select, textarea { font-family: 'Space Grotesk', sans-serif; font-size: 14px; outline: none; background: ${isDark ? "#161929" : "#fff"}; color: ${isDark ? "#e2e8f0" : "#1a202c"}; border: 1px solid ${isDark ? "#1e2235" : "#dde3ed"}; border-radius: 8px; padding: 8px 12px; width: 100%; }
+  ::-webkit-scrollbar { width: 6px; } ::-webkit-scrollbar-thumb { background: ${isDark ? "#2a2d3e" : "#c4cdd6"}; border-radius: 3px; }
+  @keyframes fadeUp { from { opacity: 0; transform: translateY(12px); } to { opacity: 1; transform: translateY(0); } }
+  @keyframes pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.5; } }
+  @keyframes spin { to { transform: rotate(360deg); } }
+  @keyframes glow { 0%, 100% { box-shadow: 0 0 20px rgba(99,255,180,0.3); } 50% { box-shadow: 0 0 40px rgba(99,255,180,0.6); } }
+  .fade-up { animation: fadeUp 0.4s ease forwards; }
+`;
 
 const fmt = (v, cur = "₩") => {
   const sign = v >= 0 ? "+" : "";
@@ -1057,6 +1066,21 @@ export default function App() {
   const [showSeedModal, setShowSeedModal] = useState(false);
   const [checklist, setChecklist] = useState(ANALYSIS_ITEMS);
   const [editableChecklist, setEditableChecklist] = useState(ANALYSIS_ITEMS);
+  const [isDark, setIsDark] = useState(() => {
+    if (typeof window !== "undefined") return localStorage.getItem("tg_theme") !== "light";
+    return true;
+  });
+
+  // 테마 변경 시 C 업데이트
+  C = isDark ? { ...DARK } : { ...LIGHT };
+
+  const toggleTheme = () => {
+    setIsDark(d => {
+      const next = !d;
+      if (typeof window !== "undefined") localStorage.setItem("tg_theme", next ? "dark" : "light");
+      return next;
+    });
+  };
 
   useEffect(() => {
     const load = async () => {
@@ -1136,67 +1160,62 @@ export default function App() {
   );
 
   return (
-    <div style={{ background: C.bg, minHeight: "100vh", color: C.text, fontFamily: "'Space Grotesk',sans-serif", maxWidth: 600, margin: "0 auto" }}>
-      <style>{CSS}</style>
+    <div style={{ background: C.bg, minHeight: "100vh", color: C.text, fontFamily: "'Space Grotesk',sans-serif" }}>
+      <style>{getCSS(isDark)}</style>
+      <div style={{ maxWidth: 1100, margin: "0 auto", display: "grid", gridTemplateColumns: "240px 1fr", minHeight: "100vh", gap: 0 }}>
 
-      {/* 헤더 */}
-      <div style={{ padding: "16px 16px 0", borderBottom: "1px solid " + C.border, background: C.surface, position: "sticky", top: 0, zIndex: 50 }}>
-        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 12 }}>
-          <div style={{ fontSize: 20, fontWeight: 700, letterSpacing: -0.5 }}>TradeGate <span style={{ fontSize: 11, color: C.muted, fontWeight: 400 }}>코인 선물</span></div>
-          {!showWizard && (
-            <button onClick={() => setShowWizard(true)} style={{ padding: "9px 16px", borderRadius: 10, border: "none", background: C.accent, color: "#000", fontWeight: 700, fontSize: 13, cursor: "pointer", fontFamily: "'Space Grotesk',sans-serif" }}>+ 새 분석</button>
+        {/* ── 사이드바 (PC) ── */}
+        <div style={{ background: C.surface, borderRight: "1px solid " + C.border, padding: "24px 16px", display: "flex", flexDirection: "column", gap: 8, position: "sticky", top: 0, height: "100vh", overflowY: "auto" }}>
+          <div style={{ marginBottom: 16 }}>
+            <div style={{ fontSize: 20, fontWeight: 700, letterSpacing: -0.5, marginBottom: 4 }}>TradeGate</div>
+            <div style={{ fontSize: 11, color: C.muted }}>코인 선물</div>
+          </div>
+
+          {/* 시드 요약 */}
+          {seed.initial > 0 && (
+            <div onClick={() => setShowSeedModal(true)} style={{ padding: "12px 14px", background: C.surface2, borderRadius: 10, border: "1px solid " + C.border, cursor: "pointer", marginBottom: 8 }}>
+              <div style={{ fontSize: 10, color: C.muted, marginBottom: 4, fontWeight: 600 }}>현재 시드</div>
+              <div style={{ fontFamily: "'JetBrains Mono',monospace", fontSize: 15, fontWeight: 700, color: currentSeed >= seed.initial ? C.accent : C.red }}>{currentSeed.toFixed(2)} USDT</div>
+              <div style={{ fontFamily: "'JetBrains Mono',monospace", fontSize: 11, color: seedReturn >= 0 ? C.accent : C.red, marginTop: 2 }}>{seedReturn >= 0 ? "+" : ""}{seedReturn.toFixed(2)}%</div>
+            </div>
           )}
+          {seed.initial === 0 && (
+            <div onClick={() => setShowSeedModal(true)} style={{ padding: "10px 14px", background: C.surface2, borderRadius: 10, border: "1px dashed " + C.border, cursor: "pointer", marginBottom: 8, textAlign: "center" }}>
+              <div style={{ fontSize: 12, color: C.muted }}>+ 시드 설정</div>
+            </div>
+          )}
+
+          {/* 탭 네비게이션 */}
+          {!showWizard && [["positions", "📍 포지션"], ["history", "📋 기록"], ["stats", "📊 통계"], ["settings", "⚙️ 설정"]].map(([id, label]) => (
+            <button key={id} onClick={() => setTab(id)} style={{ padding: "10px 14px", borderRadius: 10, border: "none", background: tab === id ? C.accent + "18" : "transparent", color: tab === id ? C.accent : C.muted, fontWeight: tab === id ? 700 : 400, fontSize: 13, cursor: "pointer", textAlign: "left", fontFamily: "'Space Grotesk',sans-serif", borderLeft: "3px solid " + (tab === id ? C.accent : "transparent") }}>
+              {label}
+            </button>
+          ))}
+
+          <div style={{ flex: 1 }} />
+
+          {/* 다크/라이트 토글 */}
+          <button onClick={toggleTheme} style={{ padding: "10px 14px", borderRadius: 10, border: "1px solid " + C.border, background: "transparent", color: C.muted, fontSize: 13, cursor: "pointer", textAlign: "left", fontFamily: "'Space Grotesk',sans-serif", display: "flex", alignItems: "center", gap: 8 }}>
+            <span>{isDark ? "☀️" : "🌙"}</span>
+            <span>{isDark ? "라이트 모드" : "다크 모드"}</span>
+          </button>
         </div>
 
-        {/* 시드 트래킹 바 */}
-        {!showWizard && (
-          <div onClick={() => setShowSeedModal(true)} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "10px 14px", marginBottom: 12, background: C.surface2, borderRadius: 10, border: "1px solid " + C.border, cursor: "pointer" }}>
-            <div style={{ display: "flex", gap: 20, alignItems: "center" }}>
-              <div>
-                <div style={{ fontSize: 9, color: C.muted, fontWeight: 600, letterSpacing: 1, marginBottom: 2 }}>현재 시드</div>
-                <div style={{ fontFamily: "'JetBrains Mono',monospace", fontSize: 16, fontWeight: 700, color: seed.initial === 0 ? C.muted : currentSeed >= seed.initial ? C.accent : C.red }}>
-                  {seed.initial === 0 ? "미설정" : currentSeed.toFixed(2) + " USDT"}
-                </div>
-              </div>
-              {seed.initial > 0 && (
-                <>
-                  <div style={{ width: 1, height: 28, background: C.border }} />
-                  <div>
-                    <div style={{ fontSize: 9, color: C.muted, fontWeight: 600, letterSpacing: 1, marginBottom: 2 }}>초기 시드</div>
-                    <div style={{ fontFamily: "'JetBrains Mono',monospace", fontSize: 13, color: C.muted }}>{seed.initial.toFixed(2)} USDT</div>
-                  </div>
-                  <div style={{ width: 1, height: 28, background: C.border }} />
-                  <div>
-                    <div style={{ fontSize: 9, color: C.muted, fontWeight: 600, letterSpacing: 1, marginBottom: 2 }}>수익률</div>
-                    <div style={{ fontFamily: "'JetBrains Mono',monospace", fontSize: 13, fontWeight: 700, color: seedReturn >= 0 ? C.accent : C.red }}>
-                      {seedReturn >= 0 ? "+" : ""}{seedReturn.toFixed(2)}%
-                    </div>
-                  </div>
-                </>
-              )}
-            </div>
-            <div style={{ display: "flex", flexDirection: "column", alignItems: "flex-end", gap: 2 }}>
-              {seed.initial > 0 && totalPnl !== 0 && (
-                <div style={{ fontFamily: "'JetBrains Mono',monospace", fontSize: 12, color: totalPnl >= 0 ? C.accent : C.red, fontWeight: 600 }}>
-                  {totalPnl >= 0 ? "+" : ""}{totalPnl.toFixed(2)} USDT
-                </div>
-              )}
-              <div style={{ fontSize: 10, color: C.muted }}>탭하여 수정 →</div>
-            </div>
-          </div>
-        )}
+        {/* ── 메인 콘텐츠 ── */}
+        <div style={{ display: "flex", flexDirection: "column", minHeight: "100vh" }}>
 
-        {!showWizard && (
-          <div style={{ display: "flex", gap: 0 }}>
-            {[["positions", "포지션"], ["history", "기록"], ["stats", "통계"], ["settings", "설정"]].map(([id, label]) => (
-              <button key={id} onClick={() => setTab(id)} style={{ flex: 1, padding: "10px 0", background: "none", border: "none", borderBottom: "2px solid " + (tab === id ? C.accent : "transparent"), color: tab === id ? C.accent : C.muted, fontWeight: tab === id ? 700 : 400, fontSize: 13, cursor: "pointer", fontFamily: "'Space Grotesk',sans-serif" }}>{label}</button>
-            ))}
+          {/* 상단 헤더 */}
+          <div style={{ padding: "16px 24px", borderBottom: "1px solid " + C.border, background: C.surface, position: "sticky", top: 0, zIndex: 50, display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+            <div style={{ fontWeight: 700, fontSize: 16, color: C.muted }}>
+              {showWizard ? "새 분석" : { positions: "포지션", history: "기록", stats: "통계", settings: "설정" }[tab]}
+            </div>
+            {!showWizard && (
+              <button onClick={() => setShowWizard(true)} style={{ padding: "9px 20px", borderRadius: 10, border: "none", background: C.accent, color: "#000", fontWeight: 700, fontSize: 13, cursor: "pointer", fontFamily: "'Space Grotesk',sans-serif" }}>+ 새 분석</button>
+            )}
           </div>
-        )}
-      </div>
 
-      {/* 컨텐츠 */}
-      <div style={{ padding: "20px 16px", paddingBottom: 40 }}>
+          {/* 컨텐츠 영역 */}
+          <div style={{ padding: "24px", flex: 1 }}>
         {showWizard ? (
           <AnalysisWizard onComplete={handleComplete} onCancel={() => setShowWizard(false)} checklist={checklist} />
         ) : tab === "positions" ? (
@@ -1280,14 +1299,13 @@ export default function App() {
 
       {/* 상세 모달 */}
       {detailPos && (
-        <div onClick={() => setDetailPos(null)} style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.8)", zIndex: 1000, display: "flex", alignItems: "flex-end", justifyContent: "center", padding: "0 0 0 0" }}>
-          <div onClick={e => e.stopPropagation()} style={{ background: C.surface, border: "1px solid " + C.border, borderRadius: "16px 16px 0 0", padding: 24, width: "100%", maxWidth: 600, maxHeight: "85vh", overflowY: "auto" }}>
+        <div onClick={() => setDetailPos(null)} style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.8)", zIndex: 1000, display: "flex", alignItems: "center", justifyContent: "center", padding: 24 }}>
+          <div onClick={e => e.stopPropagation()} style={{ background: C.surface, border: "1px solid " + C.border, borderRadius: 16, padding: 24, width: "100%", maxWidth: 600, maxHeight: "85vh", overflowY: "auto" }}>
             <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 16 }}>
               <div style={{ fontWeight: 700, fontSize: 18 }}>{detailPos.symbol} 분석 상세</div>
               <button onClick={() => setDetailPos(null)} style={{ background: C.surface2, border: "1px solid " + C.border, color: C.text, width: 30, height: 30, borderRadius: "50%", cursor: "pointer" }}>✕</button>
             </div>
             <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
-              {/* 체크된 항목 + 코멘트 */}
               <div style={{ fontSize: 12, color: C.muted, fontWeight: 600 }}>수집된 근거 ({Object.values(detailPos.checked || {}).filter(v => v?.on || v === true).length}개)</div>
               {Object.entries(detailPos.checked || {}).filter(([, v]) => v?.on || v === true).map(([id, val]) => {
                 const allChecklistItems = (detailPos.checklist || []).flatMap(g => g.items);
@@ -1317,7 +1335,6 @@ export default function App() {
                   {detailPos.exitMemo}
                 </div>
               )}
-              {/* 청산 차트 */}
               {detailPos.exitImages && detailPos.exitImages.length > 0 && (
                 <div>
                   <div style={{ fontSize: 11, color: C.muted, fontWeight: 600, marginBottom: 6 }}>청산 차트</div>
@@ -1333,6 +1350,8 @@ export default function App() {
           </div>
         </div>
       )}
+        </div>{/* 메인 콘텐츠 끝 */}
+      </div>{/* 그리드 끝 */}
     </div>
   );
 }
