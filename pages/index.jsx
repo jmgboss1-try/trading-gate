@@ -832,11 +832,6 @@ function ChecklistSettings({ checklist, onSave }) {
   const [editDraft, setEditDraft] = useState({});
   const [saved, setSaved] = useState(false);
 
-
-  // Redis에서 checklist 로드되면 로컬 state 동기화
-  useEffect(() => {
-    setGroups(JSON.parse(JSON.stringify(checklist)));
-  }, [checklist]);
   const handleSave = () => {
     onSave(groups);
     setSaved(true);
@@ -1269,7 +1264,9 @@ export default function App() {
         ) : tab === "stats" ? (
           <StatsView positions={positions} />
         ) : (
-          <ChecklistSettings key={JSON.stringify(checklist)} checklist={checklist} onSave={saveChecklist} />
+          loaded
+            ? <ChecklistSettings checklist={checklist} onSave={saveChecklist} />
+            : <Card style={{ textAlign: "center", padding: 40 }}><div style={{ color: C.muted, fontSize: 13 }}>로딩 중...</div></Card>
         )}
       </div>
 
