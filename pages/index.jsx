@@ -824,53 +824,41 @@ function StatsView({ positions }) {
 }
 
 // ── 체크리스트 설정 ───────────────────────────────────────
-function ChecklistSettings({ checklist, onSave }) {
-  const [groups, setGroups] = useState(JSON.parse(JSON.stringify(checklist)));
+function ChecklistSettings({ groups, onGroupsChange, onSave }) {
   const [newGroupName, setNewGroupName] = useState("");
   const [newItems, setNewItems] = useState({});
   const [editingItem, setEditingItem] = useState(null);
   const [editDraft, setEditDraft] = useState({});
   const [saved, setSaved] = useState(false);
-  const isFirstRender = useRef(true);
 
-  // groups가 바뀔 때마다 자동 저장 (첫 마운트는 제외)
-  useEffect(() => {
-    if (isFirstRender.current) {
-      isFirstRender.current = false;
-      return;
-    }
-    onSave(groups);
-    setSaved(true);
-    const t = setTimeout(() => setSaved(false), 1200);
-    return () => clearTimeout(t);
-  }, [groups]);
+  const update = (newGroups) => onGroupsChange(newGroups);
 
-  const handleSave = () => {
-    onSave(groups);
+  const handleSave = async () => {
+    await onSave(groups);
     setSaved(true);
     setTimeout(() => setSaved(false), 1500);
   };
 
   const addGroup = () => {
     if (!newGroupName.trim()) return;
-    setGroups(g => [...g, { group: newGroupName.trim(), icon: "📌", items: [] }]);
+    update([...groups, { group: newGroupName.trim(), icon: "📌", items: [] }]);
     setNewGroupName("");
   };
 
   const removeGroup = (gi) => {
     if (!confirm("그룹을 삭제할까요?")) return;
-    setGroups(g => g.filter((_, i) => i !== gi));
+    update(groups.filter((_, i) => i !== gi));
   };
 
   const addItem = (gi) => {
     const ni = newItems[gi] || {};
     if (!ni.label) return;
-    setGroups(g => g.map((group, i) => i === gi ? { ...group, items: [...group.items, { id: "custom_" + Date.now(), label: ni.label, desc: ni.desc || "", score: parseInt(ni.score) || 1 }] } : group));
+    update(groups.map((group, i) => i === gi ? { ...group, items: [...group.items, { id: "custom_" + Date.now(), label: ni.label, desc: ni.desc || "", score: parseInt(ni.score) || 1 }] } : group));
     setNewItems(n => ({ ...n, [gi]: {} }));
   };
 
   const removeItem = (gi, ii) => {
-    setGroups(g => g.map((group, i) => i === gi ? { ...group, items: group.items.filter((_, j) => j !== ii) } : group));
+    update(groups.map((group, i) => i === gi ? { ...group, items: group.items.filter((_, j) => j !== ii) } : group));
     setEditingItem(null);
   };
 
@@ -880,7 +868,7 @@ function ChecklistSettings({ checklist, onSave }) {
   };
 
   const saveEdit = (gi, ii) => {
-    setGroups(g => g.map((group, i) => i === gi ? {
+    update(groups.map((group, i) => i === gi ? {
       ...group,
       items: group.items.map((item, j) => j === ii ? { ...item, label: editDraft.label, desc: editDraft.desc, score: parseInt(editDraft.score) || 1 } : item)
     } : group));
@@ -1073,6 +1061,7 @@ export default function App() {
   const [seed, setSeed] = useState({ initial: 0, withdrawals: [] });
   const [showSeedModal, setShowSeedModal] = useState(false);
   const [checklist, setChecklist] = useState(ANALYSIS_ITEMS);
+  const [editableChecklist, setEditableChecklist] = useState(ANALYSIS_ITEMS);
 
   useEffect(() => {
     const load = async () => {
@@ -1082,7 +1071,11 @@ export default function App() {
         const s = await loadData("seed");
         if (s) setSeed(typeof s === "string" ? JSON.parse(s) : s);
         const cl = await loadData("checklist");
-        if (cl) setChecklist(typeof cl === "string" ? JSON.parse(cl) : cl);
+        if (cl) {
+          const parsed = typeof cl === "string" ? JSON.parse(cl) : cl;
+          setChecklist(parsed);
+          setEditableChecklist(JSON.parse(JSON.stringify(parsed)));
+        }
       } catch (e) {}
       setLoaded(true);
     };
@@ -1096,6 +1089,7 @@ export default function App() {
 
   const saveChecklist = async (newCl) => {
     setChecklist(newCl);
+    setEditableChecklist(JSON.parse(JSON.stringify(newCl)));
     try { await saveData("checklist", JSON.stringify(newCl)); } catch (e) {}
   };
 
@@ -1278,7 +1272,7 @@ export default function App() {
           <StatsView positions={positions} />
         ) : (
           loaded
-            ? <ChecklistSettings checklist={checklist} onSave={saveChecklist} />
+            ? <ChecklistSettings groups={editableChecklist} onGroupsChange={setEditableChecklist} onSave={saveChecklist} />
             : <Card style={{ textAlign: "center", padding: 40 }}><div style={{ color: C.muted, fontSize: 13 }}>로딩 중...</div></Card>
         )}
       </div>
