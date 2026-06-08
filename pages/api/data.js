@@ -8,7 +8,7 @@ export default async function handler(req, res) {
   res.setHeader("Cache-Control", "no-store, no-cache, must-revalidate");
   res.setHeader("Pragma", "no-cache");
 
-  const { key } = req.query;
+  const key = req.method === "POST" ? req.body?.key : req.query?.key;
   const fullKey = PREFIX + key;
   if (req.method === "GET") {
     try {
