@@ -4,6 +4,10 @@ const redis = Redis.fromEnv();
 const PREFIX = "tg:"; // tradegate prefix
 
 export default async function handler(req, res) {
+  // 캐시 완전 방지
+  res.setHeader("Cache-Control", "no-store, no-cache, must-revalidate");
+  res.setHeader("Pragma", "no-cache");
+
   const { key } = req.query;
   const fullKey = PREFIX + key;
   if (req.method === "GET") {
