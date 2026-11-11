@@ -1,16 +1,15 @@
 // pages/api/data.js
-import { Redis } from "@upstash/redis";
-const redis = Redis.fromEnv();
-const PREFIX = "tg:"; // tradegate prefix
-const ALLOWED_KEYS = new Set(["positions", "seed", "checklist", "settings"]);
+// 작은 설정성 데이터 전용 (포지션은 /api/positions, 이미지는 /api/images)
+import { redis, PREFIX } from "../../lib/redis";
+import { requireAuth } from "../../lib/auth";
 
-// Vercel 함수 요청 한도(4.5MB) 안쪽으로 — 이미지는 클라이언트에서 압축
-export const config = { api: { bodyParser: { sizeLimit: "4mb" } } };
+const ALLOWED_KEYS = new Set(["seed", "checklist", "settings"]);
 
 export default async function handler(req, res) {
   // 캐시 완전 방지
   res.setHeader("Cache-Control", "no-store, no-cache, must-revalidate");
   res.setHeader("Pragma", "no-cache");
+  if (!requireAuth(req, res)) return;
 
   const key = req.method === "POST" ? req.body?.key : req.query?.key;
   if (!ALLOWED_KEYS.has(key)) return res.status(400).json({ error: "잘못된 key" });

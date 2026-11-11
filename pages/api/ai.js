@@ -2,6 +2,7 @@
 // 클라이언트는 { prompt, images: [dataURL...] } 만 보낸다.
 // 모델/토큰 한도는 서버에서 고정 — 임의 모델·대량 토큰 호출 방지.
 import Anthropic from "@anthropic-ai/sdk";
+import { requireAuth } from "../../lib/auth";
 
 const MODEL = process.env.AI_MODEL || "claude-haiku-5-5";
 const MAX_IMAGES = 4;
@@ -19,6 +20,7 @@ function toImageBlock(dataUrl) {
 
 export default async function handler(req, res) {
   if (req.method !== "POST") return res.status(405).end();
+  if (!requireAuth(req, res)) return;
   const { prompt, images } = req.body || {};
   if (typeof prompt !== "string" || !prompt.trim()) return res.status(400).json({ error: "prompt 필요" });
 

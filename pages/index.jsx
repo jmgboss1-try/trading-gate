@@ -128,7 +128,11 @@ const todayStr = () => {
   const d = new Date();
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
 };
-const imgSrc = img => (typeof img === "string" ? img : img?.preview);
+// 이미지 표시: 업로드된 id → /api/images, 작성 중 dataURL → 그대로, 구버전 객체 → preview
+const imgSrc = img => {
+  if (typeof img !== "string") return img?.preview;
+  return img.startsWith("data:") ? img : `/api/images?id=${encodeURIComponent(img)}`;
+};
 
 // ── 손익 계산 (증거금 기준, 한 곳에서만 계산) ─────────────
 // margin: 투입 증거금(USDT) · lev: 레버리지 · fillRatio: 체결 비율(0~1) · feePct: 편도 수수료(%)
@@ -174,19 +178,37 @@ function compressImage(file, maxDim = 1400, quality = 0.75) {
 }
 const compressAll = files => Promise.all(Array.from(files).map(f => compressImage(f)));
 
-async function saveData(key, value) {
-  const r = await fetch("/api/data", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ key, value }) });
-  if (!r.ok) {
-    if (r.status === 413) throw new Error("저장 용량 초과 — 차트 이미지 수를 줄여주세요");
-    const j = await r.json().catch(() => ({}));
-    throw new Error(j.error || `저장 실패 (${r.status})`);
-  }
+// ── 서버 통신 ──────────────────────────────────────────
+// 401/503(로그인 필요·비밀번호 미설정)이면 onAuthLost로 로그인 화면 전환
+let onAuthLost = () => {};
+class AuthError extends Error {}
+
+async function api(path, { method = "GET", body } = {}) {
+  const r = await fetch(path, { method, headers: body ? { "Content-Type": "application/json" } : undefined, body: body ? JSON.stringify(body) : undefined });
+  const j = await r.json().catch(() => ({}));
+  if (r.status === 401 || (r.status === 503 && j.code === "NO_PASSWORD")) { onAuthLost(j); throw new AuthError(j.error || "로그인이 필요합니다"); }
+  if (r.status === 413) throw new Error("용량 초과 — 이미지 수를 줄여주세요");
+  if (!r.ok) throw new Error(j.error || `요청 실패 (${r.status})`);
+  return j;
 }
-async function loadData(key) {
-  const r = await fetch(`/api/data?key=${key}`);
-  if (!r.ok) throw new Error(`불러오기 실패 (${r.status})`);
-  const j = await r.json();
+
+const saveData = (key, value) => api("/api/data", { method: "POST", body: { key, value } });
+const loadData = async key => {
+  const j = await api(`/api/data?key=${key}`);
   return typeof j.data === "string" ? JSON.parse(j.data) : j.data;
+};
+const loadPositions = async () => (await api("/api/positions")).positions || [];
+const putPosition = position => api("/api/positions", { method: "PUT", body: { position } });
+const deletePosition = id => api(`/api/positions?id=${encodeURIComponent(id)}`, { method: "DELETE" });
+
+// 작성 중인 dataURL 이미지만 업로드해서 id로 교체 (이미 id면 그대로)
+async function uploadImages(list = []) {
+  const out = [];
+  for (const img of list) {
+    if (typeof img === "string" && img.startsWith("data:")) out.push((await api("/api/images", { method: "POST", body: { dataUrl: img } })).id);
+    else if (typeof img === "string") out.push(img);
+  }
+  return out;
 }
 
 // ── 컴포넌트 ───────────────────────────────────────────────
@@ -243,6 +265,7 @@ function AnalysisWizard({ onComplete, onCancel, checklist, settings }) {
   const [memo, setMemo] = useState("");
   const [aiLoading, setAiLoading] = useState(false);
   const [aiAdvice, setAiAdvice] = useState("");
+  const [saving, setSaving] = useState(false);
   const [fillType, setFillType] = useState("full"); // "full" | "partial" | "unfilled"
   const [targetQty, setTargetQty] = useState(""); // 목표 수량
   const [filledQty, setFilledQty] = useState(""); // 실제 체결 수량
@@ -324,13 +347,14 @@ function AnalysisWizard({ onComplete, onCancel, checklist, settings }) {
     setAiLoading(false);
   };
 
-  const handleComplete = () => {
-    if (!passed) return;
+  const handleComplete = async () => {
+    if (!passed || saving) return;
+    setSaving(true);
     const sim = fillType === "unfilled" ? {
       simWin: tpN && tpSideOk ? round2(calcTrade({ dir, entry, exit: tp, margin: balance, lev, feePct }).pnl) : null,
       simLoss: round2(calcTrade({ dir, entry, exit: sl, margin: balance, lev, feePct }).pnl),
     } : {};
-    onComplete({
+    await onComplete({
       id: Date.now(), date: todayStr(),
       symbol: finalSymbol, dir, entry, sl, tp, lev, memo,
       // 체크된 항목만 스냅샷 — 이후 체크리스트를 수정해도 기록 유지
@@ -348,6 +372,7 @@ function AnalysisWizard({ onComplete, onCancel, checklist, settings }) {
       status: fillType === "unfilled" ? "unfilled" : "active",
       images,
     });
+    setSaving(false); // 성공 시엔 마법사가 닫힘, 실패 시 입력 내용 유지
   };
 
   const nav = d => setImgIdx(i => (i + d + images.length) % images.length);
@@ -694,8 +719,8 @@ function AnalysisWizard({ onComplete, onCancel, checklist, settings }) {
 
           <div style={{ display: "flex", gap: 10 }}>
             <button onClick={() => setStep(4)} style={{ flex: 1, padding: "13px 0", borderRadius: 12, border: "1px solid " + C.border, background: "transparent", color: C.muted, fontWeight: 600, fontSize: 14, cursor: "pointer", fontFamily: "'Space Grotesk',sans-serif" }}>← 이전</button>
-            <button onClick={handleComplete} disabled={!passed} style={{ flex: 2, padding: "13px 0", borderRadius: 12, border: "none", background: passed ? C.accent : C.surface2, color: passed ? "#000" : C.muted, fontWeight: 700, fontSize: 14, cursor: passed ? "pointer" : "not-allowed", fontFamily: "'Space Grotesk',sans-serif" }}>
-              {passed ? "✓ 분석 저장 & 포지션 오픈" : "🔒 게이트 미통과"}
+            <button onClick={handleComplete} disabled={!passed || saving} style={{ flex: 2, padding: "13px 0", borderRadius: 12, border: "none", background: passed ? C.accent : C.surface2, color: passed ? "#000" : C.muted, fontWeight: 700, fontSize: 14, cursor: passed ? "pointer" : "not-allowed", fontFamily: "'Space Grotesk',sans-serif", opacity: saving ? 0.6 : 1 }}>
+              {saving ? "저장 중..." : passed ? "✓ 분석 저장 & 포지션 오픈" : "🔒 게이트 미통과"}
             </button>
           </div>
         </div>
@@ -808,6 +833,7 @@ function PositionCard({ pos, onClose, onView, onUpdateQty, onFill, onCancelOrder
 
 // ── 청산 모달 ─────────────────────────────────────────────
 function CloseModal({ pos, onSave, onCancel, feePct }) {
+  const [saving, setSaving] = useState(false);
   const [manualPnl, setManualPnl] = useState("");
   const [exitPrice, setExitPrice] = useState("");
   const [exitMemo, setExitMemo] = useState("");
@@ -878,7 +904,7 @@ function CloseModal({ pos, onSave, onCancel, feePct }) {
         </div>
         <div style={{ display: "flex", gap: 10, marginTop: 16 }}>
           <button onClick={onCancel} style={{ flex: 1, padding: "12px 0", borderRadius: 10, border: "1px solid " + C.border, background: "transparent", color: C.muted, fontWeight: 600, cursor: "pointer", fontFamily: "'Space Grotesk',sans-serif" }}>취소</button>
-          <button onClick={() => onSave({ exitPrice: exitN, exitMemo, exitImages, realPnl: round2(pnl), realPct: round2(pct), exitDate: todayStr(), status: pnl >= 0 ? "win" : "loss" })} disabled={!exitN} style={{ flex: 2, padding: "13px 0", borderRadius: 10, border: "none", background: C.accent, color: "#000", fontWeight: 700, cursor: "pointer", fontFamily: "'Space Grotesk',sans-serif", opacity: !exitN ? 0.5 : 1 }}>저장</button>
+          <button onClick={async () => { setSaving(true); await onSave({ exitPrice: exitN, exitMemo, exitImages, realPnl: round2(pnl), realPct: round2(pct), exitDate: todayStr(), status: pnl >= 0 ? "win" : "loss" }); setSaving(false); }} disabled={!exitN || saving} style={{ flex: 2, padding: "13px 0", borderRadius: 10, border: "none", background: C.accent, color: "#000", fontWeight: 700, cursor: "pointer", fontFamily: "'Space Grotesk',sans-serif", opacity: !exitN || saving ? 0.5 : 1 }}>{saving ? "저장 중..." : "저장"}</button>
         </div>
       </div>
     </div>
@@ -1236,6 +1262,44 @@ function SeedModal({ seed, onSave, onCancel, totalPnl, currentSeed, seedReturn }
   );
 }
 
+// ── 로그인 화면 ──────────────────────────────────────────
+function LoginScreen({ mode, onLogin }) {
+  const [pw, setPw] = useState("");
+  const [err, setErr] = useState("");
+  const [busy, setBusy] = useState(false);
+  const submit = async (e) => {
+    e.preventDefault();
+    if (!pw || busy) return;
+    setBusy(true); setErr("");
+    try { await onLogin(pw); } catch (e2) { setErr(e2.message); setPw(""); }
+    setBusy(false);
+  };
+  return (
+    <div style={{ minHeight: "100dvh", display: "flex", alignItems: "center", justifyContent: "center", padding: "24px 20px" }}>
+      <form onSubmit={submit} style={{ width: "100%", maxWidth: 360, display: "flex", flexDirection: "column", gap: 14 }}>
+        <div style={{ textAlign: "center", marginBottom: 8 }}>
+          <div style={{ fontSize: 44 }}>🚪</div>
+          <div style={{ fontSize: 24, fontWeight: 700, marginTop: 8 }}>TradeGate</div>
+          <div style={{ fontSize: 13, color: C.muted, marginTop: 4 }}>{mode === "unconfigured" ? "서버 설정이 필요합니다" : "비밀번호를 입력하세요"}</div>
+        </div>
+        {mode === "unconfigured" ? (
+          <Card>
+            <div style={{ fontSize: 13, lineHeight: 1.7, color: C.text }}>
+              Vercel 프로젝트 → Settings → Environment Variables에 <b style={{ fontFamily: "'JetBrains Mono',monospace" }}>APP_PASSWORD</b>를 추가하고 다시 배포하세요.
+            </div>
+          </Card>
+        ) : (
+          <>
+            <input type="password" autoComplete="current-password" autoFocus value={pw} onChange={e => setPw(e.target.value)} placeholder="비밀번호" style={{ padding: "14px 16px", borderRadius: 12, background: C.surface, border: "1px solid " + (err ? C.red : C.border), color: C.text }} />
+            {err && <div style={{ fontSize: 13, color: C.red }}>{err}</div>}
+            <button type="submit" disabled={!pw || busy} style={{ padding: "14px 0", borderRadius: 12, border: "none", background: C.accent, color: "#000", fontWeight: 700, fontSize: 15, cursor: "pointer", opacity: !pw || busy ? 0.6 : 1, fontFamily: "'Space Grotesk',sans-serif" }}>{busy ? "확인 중..." : "로그인"}</button>
+          </>
+        )}
+      </form>
+    </div>
+  );
+}
+
 export default function App() {
   const [tab, setTab] = useState("positions");
   const [positions, setPositions] = useState([]);
@@ -1251,6 +1315,7 @@ export default function App() {
   const [settings, setSettings] = useState(DEFAULT_SETTINGS);
   const [isDark, setIsDark] = useState(true);
   const [toast, setToast] = useState(null); // { msg, error }
+  const [auth, setAuth] = useState("checking"); // checking | ok | login | unconfigured
   const toastTimer = useRef();
 
   useEffect(() => {
@@ -1275,27 +1340,52 @@ export default function App() {
     toastTimer.current = setTimeout(() => setToast(null), error ? 6000 : 2000);
   };
 
+  // ── 로그인 → 데이터 로드 ──
+  const loadAll = async () => {
+    setLoaded(false); setLoadError("");
+    try {
+      const [ps, sd, cl, st] = await Promise.all([loadPositions(), loadData("seed"), loadData("checklist"), loadData("settings")]);
+      setPositions(ps);
+      if (sd) setSeed(sd);
+      if (cl) { setChecklist(cl); setEditableChecklist(JSON.parse(JSON.stringify(cl))); }
+      if (st) setSettings({ ...DEFAULT_SETTINGS, ...st });
+    } catch (e) {
+      if (e instanceof AuthError) return;
+      setLoadError(e.message);
+    }
+    setLoaded(true);
+  };
+
   useEffect(() => {
-    const load = async () => {
-      try {
-        const [d, s, cl, st] = await Promise.all(["positions", "seed", "checklist", "settings"].map(loadData));
-        if (d) setPositions(d);
-        if (s) setSeed(s);
-        if (cl) { setChecklist(cl); setEditableChecklist(JSON.parse(JSON.stringify(cl))); }
-        if (st) setSettings({ ...DEFAULT_SETTINGS, ...st });
-      } catch (e) {
-        setLoadError(e.message);
-      }
-      setLoaded(true);
-    };
-    load();
+    onAuthLost = (j) => setAuth(j?.code === "NO_PASSWORD" ? "unconfigured" : "login");
+    fetch("/api/session").then(r => r.json()).then(j => {
+      if (!j.configured) setAuth("unconfigured");
+      else if (!j.authed) setAuth("login");
+      else { setAuth("ok"); loadAll(); }
+    }).catch(() => { setAuth("ok"); loadAll(); });
   }, []);
 
-  // 서버 저장 — 실패하면 토스트로 알리고 false 반환
-  const persist = async (key, value) => {
-    try { await saveData(key, JSON.stringify(value)); return true; }
-    catch (e) { showToast("⚠️ " + e.message + " (새로고침하면 변경사항이 사라질 수 있음)", true); return false; }
+  const handleLogin = async (password) => {
+    const r = await fetch("/api/login", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ password }) });
+    const j = await r.json().catch(() => ({}));
+    if (!r.ok) throw new Error(j.error || "로그인 실패");
+    setAuth("ok");
+    loadAll();
   };
+
+  const handleLogout = async () => {
+    if (!confirm("로그아웃할까요?")) return;
+    await fetch("/api/login", { method: "DELETE" }).catch(() => {});
+    setPositions([]); setSeed({ initial: 0, withdrawals: [] });
+    setAuth("login");
+  };
+
+  // 실패하면 토스트로 알리고 false 반환
+  const attempt = async (fn, okMsg) => {
+    try { await fn(); if (okMsg) showToast(okMsg); return true; }
+    catch (e) { if (!(e instanceof AuthError)) showToast("⚠️ " + e.message, true); return false; }
+  };
+  const persist = (key, value) => attempt(() => saveData(key, JSON.stringify(value)));
 
   const saveSeed = async (newSeed) => { setSeed(newSeed); return persist("seed", newSeed); };
   const saveSettings = async (newSt) => { setSettings(newSt); return persist("settings", newSt); };
@@ -1304,43 +1394,46 @@ export default function App() {
     setEditableChecklist(JSON.parse(JSON.stringify(newCl)));
     return persist("checklist", newCl);
   };
-  const save = async (newPositions) => { setPositions(newPositions); return persist("positions", newPositions); };
+
+  // 포지션 1건 저장 (이미지 먼저 업로드 → id로 교체). 성공 시 화면 반영
+  const upsertPos = async (pos, okMsg) => attempt(async () => {
+    const stored = { ...pos };
+    if (pos.images) stored.images = await uploadImages(pos.images);
+    if (pos.exitImages) stored.exitImages = await uploadImages(pos.exitImages);
+    await putPosition(stored);
+    setPositions(ps => ps.some(p => p.id === stored.id) ? ps.map(p => p.id === stored.id ? stored : p) : [stored, ...ps]);
+  }, okMsg);
+  const patchPos = (id, patch, okMsg) => {
+    const cur = positions.find(p => p.id === id);
+    return cur ? upsertPos({ ...cur, ...(typeof patch === "function" ? patch(cur) : patch) }, okMsg) : false;
+  };
 
   const handleComplete = async (data) => {
-    setShowWizard(false);
-    setTab("positions");
-    if (await save([data, ...positions])) showToast("✓ 포지션 저장됨");
+    if (await upsertPos(data, "✓ 포지션 저장됨")) { setShowWizard(false); setTab("positions"); }
   };
 
   const handleClose = async (result) => {
-    const updated = positions.map(p => p.id === closeTarget.id ? { ...p, ...result } : p);
-    setCloseTarget(null);
-    if (await save(updated)) showToast("✓ 청산 기록됨");
+    if (await patchPos(closeTarget.id, result, "✓ 청산 기록됨")) setCloseTarget(null);
   };
 
-  const handleUpdateQty = async (id, addedQty) => {
-    const updated = positions.map(p => {
-      if (p.id !== id) return p;
-      const newFilled = (parseFloat(p.filledQty) || 0) + addedQty;
-      const isFull = p.targetQty && newFilled >= parseFloat(p.targetQty);
-      return { ...p, filledQty: Math.round(newFilled * 10000) / 10000, fillType: isFull ? "full" : "partial" };
-    });
-    await save(updated);
-  };
+  const handleUpdateQty = (id, addedQty) => patchPos(id, p => {
+    const newFilled = (parseFloat(p.filledQty) || 0) + addedQty;
+    const isFull = p.targetQty && newFilled >= parseFloat(p.targetQty);
+    return { filledQty: Math.round(newFilled * 10000) / 10000, fillType: isFull ? "full" : "partial" };
+  });
 
   // 미체결 → 체결
-  const handleFill = async (id) => {
-    await save(positions.map(p => p.id === id ? { ...p, status: "active", fillType: "full", filledQty: p.targetQty, date: todayStr() } : p));
-  };
+  const handleFill = id => patchPos(id, p => ({ status: "active", fillType: "full", filledQty: p.targetQty, date: todayStr() }), "✓ 체결 처리됨");
   // 미체결 → 주문 취소 (기록엔 남기고 통계에선 제외)
-  const handleCancelOrder = async (id) => {
+  const handleCancelOrder = id => {
     if (!confirm("주문을 취소 처리할까요? (기록 탭에 남고 통계에서는 제외됩니다)")) return;
-    await save(positions.map(p => p.id === id ? { ...p, status: "canceled", exitDate: todayStr() } : p));
+    return patchPos(id, { status: "canceled", exitDate: todayStr() });
   };
 
-  const deletePos = async (id) => {
-    await save(positions.filter(p => p.id !== id));
-  };
+  const deletePos = id => attempt(async () => {
+    await deletePosition(id);
+    setPositions(ps => ps.filter(p => p.id !== id));
+  }, "삭제됨");
 
   const closed = positions.filter(isClosed);
   const history = positions.filter(p => isClosed(p) || p.status === "canceled");
@@ -1367,7 +1460,15 @@ export default function App() {
     </Head>
   );
 
-  if (!loaded) return (
+  if (auth === "login" || auth === "unconfigured") return (
+    <div style={{ background: C.bg, minHeight: "100dvh", color: C.text, fontFamily: "'Space Grotesk',sans-serif" }}>
+      {head}
+      <style dangerouslySetInnerHTML={{ __html: getCSS(isDark) }} />
+      <LoginScreen mode={auth} onLogin={handleLogin} />
+    </div>
+  );
+
+  if (auth === "checking" || !loaded) return (
     <div style={{ background: C.bg, minHeight: "100dvh", display: "flex", alignItems: "center", justifyContent: "center", flexDirection: "column", gap: 12 }}>
       {head}
       <style dangerouslySetInnerHTML={{ __html: getCSS(isDark) }} />
@@ -1448,6 +1549,7 @@ export default function App() {
             <span>{isDark ? "☀️" : "🌙"}</span>
             <span>{isDark ? "라이트 모드" : "다크 모드"}</span>
           </button>
+          <button onClick={handleLogout} style={{ padding: "10px 14px", borderRadius: 10, border: "none", background: "transparent", color: C.muted, fontSize: 13, cursor: "pointer", textAlign: "left", fontFamily: "'Space Grotesk',sans-serif" }}>🔓 로그아웃</button>
         </div>
 
         {/* ── 메인 콘텐츠 ── */}
@@ -1496,6 +1598,7 @@ export default function App() {
             ) : (
               <div style={{ maxWidth: 720 }}>
                 <ChecklistSettings groups={editableChecklist} onGroupsChange={setEditableChecklist} onSave={saveChecklist} settings={settings} onSettingsSave={saveSettings} />
+                <button onClick={handleLogout} style={{ width: "100%", marginTop: 14, padding: "13px 0", borderRadius: 12, border: "1px solid " + C.border, background: "transparent", color: C.muted, fontWeight: 600, fontSize: 14, cursor: "pointer", fontFamily: "'Space Grotesk',sans-serif" }}>🔓 로그아웃</button>
               </div>
             )}
           </div>

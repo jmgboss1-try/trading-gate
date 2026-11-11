@@ -6,9 +6,26 @@
 
 | 이름 | 용도 |
 |---|---|
+| `APP_PASSWORD` | **필수.** 로그인 비밀번호. 없으면 앱이 잠긴 상태로 설정 안내만 표시 |
 | `UPSTASH_REDIS_REST_URL`, `UPSTASH_REDIS_REST_TOKEN` | 데이터 저장 (Upstash Redis) |
 | `ANTHROPIC_API_KEY` | AI 진입 검토 |
+| `AUTH_SECRET` (선택) | 세션 서명 키. 없으면 비밀번호에서 파생(비밀번호 변경 시 모든 기기 로그아웃) |
 | `AI_MODEL` (선택) | 기본값 `claude-haiku-5-5` |
+
+## 보안
+
+- 모든 API(`/api/data`, `/api/positions`, `/api/images`, `/api/ai`)는 로그인 쿠키 필요
+- 세션: 서명된 httpOnly 쿠키, 180일 유지
+- 로그인 실패 IP당 15분에 10회 초과 시 잠금
+
+## 저장 구조 (Upstash Redis)
+
+| 키 | 내용 |
+|---|---|
+| `tg:pos` (해시) | 포지션 1건 = 필드 1개, 이미지는 id만 저장 |
+| `tg:img:<id>` | 차트 이미지 1장 (압축 JPEG dataURL) |
+| `tg:seed`, `tg:checklist`, `tg:settings` | 시드 / 체크리스트 / 게이트·수수료 설정 |
+| `tg:positions_legacy_backup` | 구버전 데이터 원본 (첫 실행 시 자동 이전 후 보관) |
 
 ## 손익 계산 기준
 
