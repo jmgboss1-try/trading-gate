@@ -155,6 +155,45 @@ function fillRatioOf(p) {
   return 1;
 }
 
+// 진입 계획 지표 — 마법사·진입 기록 창 공용
+function tradeMetrics({ dir, entry, sl, tp, lev, margin, fillRatio = 1, feePct = 0 }) {
+  const entryN = parseFloat(entry) || 0, slN = parseFloat(sl) || 0, tpN = parseFloat(tp) || 0;
+  const levN = parseFloat(lev) || 1, marginN = parseFloat(margin) || 0;
+  const slSideOk = entryN > 0 && slN > 0 && (dir === "롱" ? slN < entryN : slN > entryN);
+  const tpSideOk = !tpN || (entryN > 0 && (dir === "롱" ? tpN > entryN : tpN < entryN));
+  const lossAtSl = calcTrade({ dir, entry, exit: sl, margin, lev, fillRatio, feePct });
+  const profitAtTp = calcTrade({ dir, entry, exit: tp, margin, lev, fillRatio, feePct });
+  const liqPrice = entryN > 0 && levN > 1 ? (dir === "롱" ? entryN * (1 - 1 / levN) : entryN * (1 + 1 / levN)) : 0;
+  return {
+    entryN, slN, tpN, levN, marginN, slSideOk, tpSideOk, lossAtSl, liqPrice,
+    slDist: entryN > 0 && slN > 0 ? Math.abs(entryN - slN) / entryN : 0,
+    maxLoss: slSideOk ? Math.abs(lossAtSl.pnl) : 0,
+    expectedProfit: tpN && tpSideOk ? profitAtTp.pnl : 0,
+    rrRatio: slSideOk && tpN && tpSideOk ? Math.abs(tpN - entryN) / Math.abs(entryN - slN) : 0,
+    slBeyondLiq: liqPrice > 0 && slSideOk && (dir === "롱" ? slN <= liqPrice : slN >= liqPrice),
+  };
+}
+
+// 진입 게이트 — 모두 통과해야 "규칙대로 진입". 실패해도 기록은 가능(규칙 위반으로 표시)
+function gateChecksFor({ score, threshold, dir, m }) {
+  return [
+    { ok: score >= threshold, label: `근거 점수 ${threshold}점 이상 (현재 ${score}점)`, step: 3 },
+    { ok: m.entryN > 0, label: "진입가 입력", step: 4, data: true },
+    { ok: m.slSideOk, label: m.slN > 0 && m.entryN > 0 ? `손절가가 ${dir === "롱" ? "진입가보다 아래" : "진입가보다 위"}에 있어야 함` : "손절가 입력", step: 4 },
+    { ok: m.tpSideOk, label: `목표가가 ${dir === "롱" ? "진입가보다 위" : "진입가보다 아래"}에 있어야 함`, step: 4 },
+    { ok: !m.slBeyondLiq, label: "손절가가 예상 청산가보다 안쪽", step: 4 },
+    { ok: m.marginN > 0, label: "투입 증거금 입력", step: 4, data: true },
+  ];
+}
+
+// 상태: analysis(분석만) · pending(지정가 대기) · active(진행 중) · win/loss(청산) · canceled(미체결·취소)
+const normalizePos = p => (p.status === "unfilled" ? { ...p, status: "pending" } : p);
+const nowIso = () => new Date().toISOString();
+const toLocalInput = iso => { const d = iso ? new Date(iso) : new Date(); const z = n => String(n).padStart(2, "0"); return `${d.getFullYear()}-${z(d.getMonth() + 1)}-${z(d.getDate())}T${z(d.getHours())}:${z(d.getMinutes())}`; };
+const fmtDT = iso => { if (!iso) return ""; const d = new Date(iso); const z = n => String(n).padStart(2, "0"); return `${d.getMonth() + 1}/${d.getDate()} ${z(d.getHours())}:${z(d.getMinutes())}`; };
+// 분석 방향이 맞았는지: 실제 청산(win/loss) 또는 진입 안 한 분석의 사후 결과(tp/sl)
+const outcomeOf = p => (p.status === "win" ? "tp" : p.status === "loss" ? "sl" : p.virtualOutcome || null);
+
 const isClosed = p => p.status === "win" || p.status === "loss";
 const round2 = v => Math.round(v * 100) / 100;
 
@@ -266,9 +305,6 @@ function AnalysisWizard({ onComplete, onCancel, checklist, settings }) {
   const [aiLoading, setAiLoading] = useState(false);
   const [aiAdvice, setAiAdvice] = useState("");
   const [saving, setSaving] = useState(false);
-  const [fillType, setFillType] = useState("full"); // "full" | "partial" | "unfilled"
-  const [targetQty, setTargetQty] = useState(""); // 목표 수량
-  const [filledQty, setFilledQty] = useState(""); // 실제 체결 수량
   const fileRef = useRef();
   const touchX = useRef(null);
 
@@ -295,42 +331,20 @@ function AnalysisWizard({ onComplete, onCancel, checklist, settings }) {
   const finalSymbol = symbol === "기타" ? customSymbol.trim() : symbol;
 
   // 리스크 계산 (증거금 기준)
-  const entryN = parseFloat(entry) || 0;
-  const slN = parseFloat(sl) || 0;
-  const tpN = parseFloat(tp) || 0;
-  const levN = parseFloat(lev) || 1;
-  const marginN = parseFloat(balance) || 0;
-  const fillRatio = fillRatioOf({ fillType, targetQty, filledQty });
-  const slDist = entryN > 0 && slN > 0 ? Math.abs(entryN - slN) / entryN : 0;
-  const slSideOk = entryN > 0 && slN > 0 && (dir === "롱" ? slN < entryN : slN > entryN);
-  const tpSideOk = !tpN || (entryN > 0 && (dir === "롱" ? tpN > entryN : tpN < entryN));
-  const lossAtSl = calcTrade({ dir, entry, exit: sl, margin: balance, lev, fillRatio, feePct });
-  const profitAtTp = calcTrade({ dir, entry, exit: tp, margin: balance, lev, fillRatio, feePct });
-  const maxLoss = slSideOk ? Math.abs(lossAtSl.pnl) : 0;
-  const expectedProfit = tpN && tpSideOk ? profitAtTp.pnl : 0;
-  const rrRatio = slSideOk && tpN && tpSideOk ? Math.abs(tpN - entryN) / Math.abs(entryN - slN) : 0;
-  const liqPrice = entryN > 0 && levN > 1 ? (dir === "롱" ? entryN * (1 - 1 / levN) : entryN * (1 + 1 / levN)) : 0;
-  const slBeyondLiq = liqPrice > 0 && slSideOk && (dir === "롱" ? slN <= liqPrice : slN >= liqPrice);
+  const m = tradeMetrics({ dir, entry, sl, tp, lev, margin: balance, feePct });
+  const { entryN, slN, tpN, marginN, slDist, slSideOk, tpSideOk, lossAtSl, maxLoss, expectedProfit, rrRatio, liqPrice, slBeyondLiq } = m;
 
-  // ── 게이트 ──
-  const gateChecks = [
-    { ok: score >= threshold, label: `근거 점수 ${threshold}점 이상 (현재 ${score}점)`, step: 3 },
-    { ok: !!finalSymbol, label: "종목 선택", step: 2 },
-    { ok: entryN > 0, label: "진입가 입력", step: 4 },
-    { ok: slSideOk, label: slN > 0 && entryN > 0 ? `손절가가 ${dir === "롱" ? "진입가보다 아래" : "진입가보다 위"}에 있어야 함` : "손절가 입력", step: 4 },
-    { ok: tpSideOk, label: `목표가가 ${dir === "롱" ? "진입가보다 위" : "진입가보다 아래"}에 있어야 함`, step: 4 },
-    { ok: !slBeyondLiq, label: "손절가가 예상 청산가보다 안쪽", step: 4 },
-    { ok: marginN > 0, label: "투입 증거금 입력", step: 4 },
-  ];
+  // ── 진입 게이트 ── (분석만 저장할 땐 필요 없음)
+  const gateChecks = gateChecksFor({ score, threshold, dir, m });
   const passed = gateChecks.every(c => c.ok);
+  const dataOk = gateChecks.filter(c => c.data).every(c => c.ok); // 진입 기록에 최소한 필요한 값
 
   const getAiAdvice = async () => {
     setAiLoading(true); setAiAdvice("");
     const checkedItems = allItems.filter(i => isChecked(i.id)).map(i => i.label + (checked[i.id]?.comment ? ` (${checked[i.id].comment})` : "")).join(", ");
     const unchecked = allItems.filter(i => !isChecked(i.id)).map(i => i.label).join(", ");
-    const fillLabel = { full: "완전 체결", partial: "부분 체결", unfilled: "미체결(지정가 대기)" }[fillType];
     const prompt = `코인 선물 트레이딩 전문가로서 다음 진입 분석을 검토하고 한국어로 간결하게 피드백해주세요 (3-5문장).${images.length ? " 첨부한 차트 이미지도 함께 보고 판단해주세요." : ""}
-종목: ${finalSymbol || "-"} / 방향: ${dir} / 레버리지: ${lev}x / 체결상태: ${fillLabel}
+종목: ${finalSymbol || "-"} / 방향: ${dir} / 레버리지: ${lev}x
 충족된 조건: ${checkedItems || "없음"}
 미충족 조건: ${unchecked || "없음"}
 진입가: ${entry || "-"} / 손절가: ${sl || "-"} / 목표가: ${tp || "-"} / 손익비: ${rrRatio ? "1:" + rrRatio.toFixed(2) : "-"}
@@ -347,29 +361,31 @@ function AnalysisWizard({ onComplete, onCancel, checklist, settings }) {
     setAiLoading(false);
   };
 
-  const handleComplete = async () => {
-    if (!passed || saving) return;
+  // mode: "analysis"(분석만) | "pending"(지정가 걸어둠) | "active"(지금 진입)
+  const handleComplete = async (mode) => {
+    if (saving || !finalSymbol) return;
+    const entering = mode !== "analysis";
+    if (entering && !dataOk) return;
+    if (entering && !passed && !confirm("게이트를 통과하지 못했습니다.\n규칙 위반으로 기록할까요?")) return;
     setSaving(true);
-    const sim = fillType === "unfilled" ? {
-      simWin: tpN && tpSideOk ? round2(calcTrade({ dir, entry, exit: tp, margin: balance, lev, feePct }).pnl) : null,
-      simLoss: round2(calcTrade({ dir, entry, exit: sl, margin: balance, lev, feePct }).pnl),
-    } : {};
+    const now = nowIso();
     await onComplete({
-      id: Date.now(), date: todayStr(),
+      id: Date.now(), date: todayStr(), createdAt: now,
       symbol: finalSymbol, dir, entry, sl, tp, lev, memo,
+      plan: { entry, sl, tp, lev, margin: balance }, // 분석 당시 계획 (실제 진입값과 비교용)
       // 체크된 항목만 스냅샷 — 이후 체크리스트를 수정해도 기록 유지
       checkedItems: allItems.filter(i => isChecked(i.id)).map(i => ({ id: i.id, label: i.label, score: i.score, comment: checked[i.id]?.comment || "" })),
       score, maxScore, threshold, passed,
+      ruleBreak: entering && !passed,
       rrRatio: round2(rrRatio),
       posSizeUsdt: round2(marginN),
       maxLoss: round2(maxLoss),
       liqPrice: liqPrice ? Number(liqPrice.toFixed(6)) : null,
       aiAdvice,
-      fillType,
-      targetQty: parseFloat(targetQty) || null,
-      filledQty: fillType === "partial" ? (parseFloat(filledQty) || 0) : fillType === "full" ? (parseFloat(targetQty) || null) : 0,
-      ...sim,
-      status: fillType === "unfilled" ? "unfilled" : "active",
+      fillType: "full",
+      ...(mode === "pending" ? { orderAt: now } : {}),
+      ...(mode === "active" ? { entryAt: now } : {}),
+      status: mode,
       images,
     });
     setSaving(false); // 성공 시엔 마법사가 닫힘, 실패 시 입력 내용 유지
@@ -548,8 +564,8 @@ function AnalysisWizard({ onComplete, onCancel, checklist, settings }) {
       {step === 4 && (
         <div style={{ display: "flex", flexDirection: "column", gap: 16, animation: "fadeUp 0.3s ease" }}>
           <div>
-            <div style={{ fontSize: 20, fontWeight: 700, marginBottom: 4 }}>리스크 계산기</div>
-            <div style={{ fontSize: 13, color: C.muted }}>손절가를 먼저 정하고 포지션 크기를 계산하세요</div>
+            <div style={{ fontSize: 20, fontWeight: 700, marginBottom: 4 }}>진입 계획</div>
+            <div style={{ fontSize: 13, color: C.muted }}>진입할 생각이면 입력하세요. 분석만 기록할 땐 비워둬도 됩니다.</div>
           </div>
           <Card accent={C.yellow}>
             <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
@@ -589,62 +605,13 @@ function AnalysisWizard({ onComplete, onCancel, checklist, settings }) {
                   </div>
                   {!slSideOk && <div style={{ marginTop: 10, padding: "8px 12px", background: C.redDim, borderRadius: 8, fontSize: 12, color: C.red }}>⚠️ {dir} 포지션의 손절가는 진입가보다 {dir === "롱" ? "낮아야" : "높아야"} 합니다.</div>}
                   {slBeyondLiq && <div style={{ marginTop: 10, padding: "8px 12px", background: C.redDim, borderRadius: 8, fontSize: 12, color: C.red }}>⚠️ 손절가 전에 청산됩니다. 레버리지를 낮추세요.</div>}
-                  <div style={{ marginTop: 10, fontSize: 11, color: C.muted }}>수수료 편도 {feePct}% 반영{fillType === "partial" ? ` · 체결 비율 ${Math.round(fillRatio * 100)}% 반영` : ""} · 청산가는 격리 기준 근사치</div>
+                  <div style={{ marginTop: 10, fontSize: 11, color: C.muted }}>수수료 편도 {feePct}% 반영 · 청산가는 격리 기준 근사치</div>
                   {rrRatio > 0 && rrRatio < 2 && <div style={{ marginTop: 10, padding: "8px 12px", background: C.redDim, borderRadius: 8, fontSize: 12, color: C.red }}>⚠️ 손익비가 1:2 미만입니다. 목표가를 재검토하거나 진입을 재고하세요.</div>}
                 </div>
               )}
             </div>
           </Card>
 
-          {/* 체결 상태 */}
-          <Card accent={C.blue}>
-            <div style={{ fontSize: 12, color: C.blue, fontWeight: 700, marginBottom: 12 }}>⚡ 체결 상태</div>
-            <div style={{ display: "flex", gap: 8, marginBottom: 14 }}>
-              {[["full", "완전 체결", C.accent], ["partial", "부분 체결", C.yellow], ["unfilled", "미체결", C.red]].map(([key, label, color]) => (
-                <button key={key} onClick={() => setFillType(key)} style={{ flex: 1, padding: "10px 0", borderRadius: 10, border: "2px solid " + (fillType === key ? color : C.border), background: fillType === key ? color + "18" : "transparent", color: fillType === key ? color : C.muted, fontWeight: 700, fontSize: 12, cursor: "pointer", fontFamily: "'Space Grotesk',sans-serif" }}>{label}</button>
-              ))}
-            </div>
-            <div style={{ display: "grid", gridTemplateColumns: fillType === "partial" ? "1fr 1fr" : "1fr", gap: 10 }}>
-              <div>
-                <div style={{ fontSize: 11, color: C.muted, marginBottom: 5, fontWeight: 600 }}>목표 수량 (계약)</div>
-                <input type="number" inputMode="decimal" value={targetQty} onChange={e => setTargetQty(e.target.value)} placeholder="예: 0.1" style={{ width: "100%", background: C.surface2, border: "1px solid " + C.border, color: C.text, borderRadius: 8, padding: "10px 12px", fontFamily: "'JetBrains Mono',monospace", fontSize: 14 }} />
-              </div>
-              {fillType === "partial" && (
-                <div>
-                  <div style={{ fontSize: 11, color: C.yellow, marginBottom: 5, fontWeight: 600 }}>실제 체결 수량</div>
-                  <input type="number" inputMode="decimal" value={filledQty} onChange={e => setFilledQty(e.target.value)} placeholder="예: 0.05" style={{ width: "100%", background: C.surface2, border: "1px solid " + C.yellow + "60", color: C.text, borderRadius: 8, padding: "10px 12px", fontFamily: "'JetBrains Mono',monospace", fontSize: 14 }} />
-                </div>
-              )}
-            </div>
-            {fillType === "partial" && targetQty && filledQty && (
-              <div style={{ marginTop: 10, padding: "10px 14px", background: C.yellowDim, borderRadius: 8, border: "1px solid " + C.yellow + "40", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-                <span style={{ fontSize: 12, color: C.muted }}>체결률</span>
-                <span style={{ fontFamily: "'JetBrains Mono',monospace", fontSize: 14, fontWeight: 700, color: C.yellow }}>
-                  {Math.round(parseFloat(filledQty) / parseFloat(targetQty) * 100)}%
-                  <span style={{ fontSize: 11, color: C.muted, fontWeight: 400 }}> ({filledQty}/{targetQty})</span>
-                </span>
-              </div>
-            )}
-            {fillType === "unfilled" && entryN > 0 && slSideOk && marginN > 0 && (() => {
-              const simW = tpN && tpSideOk ? calcTrade({ dir, entry, exit: tp, margin: balance, lev, feePct }).pnl : null;
-              const simL = calcTrade({ dir, entry, exit: sl, margin: balance, lev, feePct }).pnl;
-              return (
-                <div style={{ marginTop: 10, padding: "12px 14px", background: "rgba(77,166,255,0.05)", borderRadius: 8, border: "1px solid " + C.blue + "30" }}>
-                  <div style={{ fontSize: 11, color: C.blue, fontWeight: 600, marginBottom: 8 }}>📊 만약 체결됐다면?</div>
-                  <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8 }}>
-                    <div style={{ padding: "8px 10px", background: "rgba(99,255,180,0.08)", borderRadius: 8 }}>
-                      <div style={{ fontSize: 10, color: C.muted, marginBottom: 2 }}>목표가 달성 시</div>
-                      <div style={{ fontFamily: "'JetBrains Mono',monospace", fontSize: 14, fontWeight: 700, color: C.accent }}>{simW == null ? "-" : fmtUsdt(simW)}</div>
-                    </div>
-                    <div style={{ padding: "8px 10px", background: "rgba(255,77,109,0.08)", borderRadius: 8 }}>
-                      <div style={{ fontSize: 10, color: C.muted, marginBottom: 2 }}>손절 시</div>
-                      <div style={{ fontFamily: "'JetBrains Mono',monospace", fontSize: 14, fontWeight: 700, color: C.red }}>{fmtUsdt(simL)}</div>
-                    </div>
-                  </div>
-                </div>
-              );
-            })()}
-          </Card>
 
           <div style={{ display: "flex", gap: 10 }}>
             <button onClick={() => setStep(3)} style={{ flex: 1, padding: "13px 0", borderRadius: 12, border: "1px solid " + C.border, background: "transparent", color: C.muted, fontWeight: 600, fontSize: 14, cursor: "pointer", fontFamily: "'Space Grotesk',sans-serif" }}>← 이전</button>
@@ -658,13 +625,13 @@ function AnalysisWizard({ onComplete, onCancel, checklist, settings }) {
         <div style={{ display: "flex", flexDirection: "column", gap: 16, animation: "fadeUp 0.3s ease" }}>
           <div>
             <div style={{ fontSize: 20, fontWeight: 700, marginBottom: 4 }}>최종 확인</div>
-            <div style={{ fontSize: 13, color: C.muted }}>분석을 검토하고 진입 여부를 결정하세요</div>
+            <div style={{ fontSize: 13, color: C.muted }}>분석은 언제나 저장할 수 있어요. 진입은 게이트를 통과해야 규칙대로입니다.</div>
           </div>
 
           {/* 게이트 */}
           <div style={{ padding: 18, borderRadius: 14, border: "2px solid " + (passed ? C.accent : C.red), background: passed ? C.accentDim : C.redDim }}>
             <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 12 }}>
-              <div style={{ fontSize: 18, fontWeight: 700, color: passed ? C.accent : C.red }}>{passed ? "🟢 GATE OPEN" : "🔒 GATE CLOSED"}</div>
+              <div style={{ fontSize: 18, fontWeight: 700, color: passed ? C.accent : C.red }}>{passed ? "🟢 진입 게이트 OPEN" : "🔒 진입 게이트 CLOSED"}</div>
               <div style={{ fontFamily: "'JetBrains Mono',monospace", fontSize: 20, fontWeight: 700, color: score >= threshold ? C.accent : C.red }}>{score}<span style={{ fontSize: 12, color: C.muted }}>/{maxScore}</span></div>
             </div>
             <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
@@ -674,7 +641,7 @@ function AnalysisWizard({ onComplete, onCancel, checklist, settings }) {
                 </div>
               ))}
             </div>
-            {!passed && <div style={{ marginTop: 10, fontSize: 12, color: C.muted, lineHeight: 1.5 }}>조건을 채우지 못하면 진입하지 않는 것이 규칙입니다.</div>}
+            {!passed && <div style={{ marginTop: 10, fontSize: 12, color: C.muted, lineHeight: 1.5 }}>조건을 채우지 못하면 진입하지 않는 것이 규칙입니다. 분석만 저장해두고 결과를 나중에 기록하세요.</div>}
           </div>
 
           {/* 요약 */}
@@ -683,7 +650,6 @@ function AnalysisWizard({ onComplete, onCancel, checklist, settings }) {
               {[
                 ["종목", symbol === "기타" ? customSymbol : symbol],
                 ["방향", dir, dir === "롱" ? C.long : C.short],
-                ["체결 상태", fillType === "full" ? "완전 체결" : fillType === "partial" ? "부분 체결" : "미체결", fillType === "full" ? C.accent : fillType === "partial" ? C.yellow : C.muted],
                 ["레버리지", lev + "x"],
                 ["진입가", entry ? entry + " USDT" : "-"],
                 ["손절가", sl ? sl + " USDT" : "-"],
@@ -717,11 +683,22 @@ function AnalysisWizard({ onComplete, onCancel, checklist, settings }) {
             {aiAdvice && <div style={{ marginTop: 12, padding: "12px 14px", background: "rgba(123,47,255,0.08)", borderRadius: 10, fontSize: 13, lineHeight: 1.7, whiteSpace: "pre-wrap", color: C.text }}>{aiAdvice}</div>}
           </Card>
 
-          <div style={{ display: "flex", gap: 10 }}>
-            <button onClick={() => setStep(4)} style={{ flex: 1, padding: "13px 0", borderRadius: 12, border: "1px solid " + C.border, background: "transparent", color: C.muted, fontWeight: 600, fontSize: 14, cursor: "pointer", fontFamily: "'Space Grotesk',sans-serif" }}>← 이전</button>
-            <button onClick={handleComplete} disabled={!passed || saving} style={{ flex: 2, padding: "13px 0", borderRadius: 12, border: "none", background: passed ? C.accent : C.surface2, color: passed ? "#000" : C.muted, fontWeight: 700, fontSize: 14, cursor: passed ? "pointer" : "not-allowed", fontFamily: "'Space Grotesk',sans-serif", opacity: saving ? 0.6 : 1 }}>
-              {saving ? "저장 중..." : passed ? "✓ 분석 저장 & 포지션 오픈" : "🔒 게이트 미통과"}
+          {/* 저장 방식 선택 */}
+          <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+            <button onClick={() => handleComplete("analysis")} disabled={saving || !finalSymbol} style={{ padding: "15px 0", borderRadius: 12, border: "1px solid " + C.blue, background: C.blue + "18", color: C.blue, fontWeight: 700, fontSize: 15, cursor: "pointer", fontFamily: "'Space Grotesk',sans-serif", opacity: saving ? 0.6 : 1 }}>
+              {saving ? "저장 중..." : "📝 분석만 저장 (진입 안 함)"}
             </button>
+            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
+              {[["pending", "⏳ 지정가 걸어둠"], ["active", "✓ 지금 진입함"]].map(([mode, label]) => (
+                <button key={mode} onClick={() => handleComplete(mode)} disabled={saving || !dataOk} style={{ padding: "15px 0", borderRadius: 12, border: passed ? "none" : "1px solid " + C.red, background: !dataOk ? C.surface2 : passed ? C.accent : C.redDim, color: !dataOk ? C.muted : passed ? "#000" : C.red, fontWeight: 700, fontSize: 14, cursor: dataOk ? "pointer" : "not-allowed", fontFamily: "'Space Grotesk',sans-serif", opacity: saving ? 0.6 : 1 }}>
+                  {label}{dataOk && !passed ? " ⚠️" : ""}
+                </button>
+              ))}
+            </div>
+            <div style={{ fontSize: 11, color: C.muted, lineHeight: 1.5 }}>
+              {!dataOk ? "진입·주문 기록은 진입가와 증거금이 있어야 해요 (4단계)." : !passed ? "⚠️ 게이트 미통과 상태로 진입하면 '규칙 위반'으로 기록되어 통계에서 따로 집계됩니다." : "실제 체결가·시간은 나중에 '진입 기록'에서 고칠 수 있어요."}
+            </div>
+            <button onClick={() => setStep(4)} style={{ padding: "12px 0", borderRadius: 12, border: "1px solid " + C.border, background: "transparent", color: C.muted, fontWeight: 600, fontSize: 14, cursor: "pointer", fontFamily: "'Space Grotesk',sans-serif" }}>← 이전</button>
           </div>
         </div>
       )}
@@ -732,35 +709,62 @@ function AnalysisWizard({ onComplete, onCancel, checklist, settings }) {
 }
 
 // ── 포지션 카드 ──────────────────────────────────────────
-function PositionCard({ pos, onClose, onView, onUpdateQty, onFill, onCancelOrder }) {
+const STATUS_BADGE = {
+  analysis: ["분석", "blue"], pending: ["지정가 대기", "muted"], canceled: ["미체결·취소", "muted"],
+};
+const OUTCOME_LABEL = { tp: ["✓ TP 먼저", "accent"], sl: ["✕ SL 먼저", "red"], none: ["– 둘 다 아님", "muted"] };
+
+function Badge({ text, color }) {
+  return <span style={{ fontSize: 10, padding: "1px 6px", borderRadius: 8, background: color + "18", color, border: "1px solid " + color + "40", whiteSpace: "nowrap" }}>{text}</span>;
+}
+
+function PositionCard({ pos, feePct = 0, onClose, onView, onUpdateQty, onEnter, onCancelOrder, onOutcome }) {
   const [expanded, setExpanded] = useState(false);
   const [addQtyInput, setAddQtyInput] = useState("");
-  const pnlColor = pos.status === "win" ? C.accent : pos.status === "loss" ? C.red : C.muted;
+  const st = pos.status;
+  const pnlColor = st === "win" ? C.accent : st === "loss" ? C.red : C.muted;
   const dirColor = pos.dir === "롱" ? C.long : C.short;
-  const isUnfilled = pos.fillType === "unfilled" || pos.status === "unfilled";
-  const isPartial = pos.fillType === "partial" && pos.status === "active";
-  const borderColor = isUnfilled ? C.muted : isPartial ? C.yellow : pos.status === "active" ? C.blue : pnlColor;
+  const isPartial = pos.fillType === "partial" && st === "active";
+  const notEntered = st === "analysis" || st === "pending" || st === "canceled";
+  const borderColor = st === "analysis" ? C.blue : st === "pending" || st === "canceled" ? C.muted : isPartial ? C.yellow : st === "active" ? C.blue : pnlColor;
+  const outcome = pos.virtualOutcome && OUTCOME_LABEL[pos.virtualOutcome];
+  const timeLine = [
+    pos.createdAt ? "분석 " + fmtDT(pos.createdAt) : pos.date,
+    pos.orderAt && "주문 " + fmtDT(pos.orderAt),
+    pos.entryAt && "진입 " + fmtDT(pos.entryAt),
+  ].filter(Boolean).join(" · ");
+
+  // 진입 안 한 분석: 체결됐다면? (계획값 기준)
+  const sim = notEntered && parseFloat(pos.entry) > 0 && parseFloat(pos.posSizeUsdt) > 0 ? {
+    win: parseFloat(pos.tp) > 0 ? calcTrade({ dir: pos.dir, entry: pos.entry, exit: pos.tp, margin: pos.posSizeUsdt, lev: pos.lev, feePct }).pnl : null,
+    loss: parseFloat(pos.sl) > 0 ? calcTrade({ dir: pos.dir, entry: pos.entry, exit: pos.sl, margin: pos.posSizeUsdt, lev: pos.lev, feePct }).pnl : null,
+  } : null;
+
+  const btn = (label, onClick, kind = "ghost", flex = 1) => (
+    <button onClick={onClick} style={{ flex, padding: "11px 0", borderRadius: 9, border: kind === "ghost" ? "1px solid " + C.border : "none", background: kind === "primary" ? C.accent : kind === "blue" ? C.blue : "transparent", color: kind === "ghost" ? C.muted : "#000", fontSize: 12, fontWeight: kind === "ghost" ? 600 : 700, cursor: "pointer", fontFamily: "'Space Grotesk',sans-serif" }}>{label}</button>
+  );
 
   return (
-    <div style={{ background: C.surface, border: "1px solid " + borderColor + (pos.status === "active" ? "80" : "40"), borderRadius: 14, overflow: "hidden", transition: "all 0.2s" }}>
-      <div onClick={() => setExpanded(e => !e)} style={{ padding: "14px 16px", cursor: "pointer", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-        <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-              <div style={{ width: 8, height: 8, borderRadius: "50%", background: isUnfilled ? C.muted : isPartial ? C.yellow : (pos.status === "active" ? C.accent : pos.status === "win" ? C.accent : C.red), animation: (pos.status === "active" && !isUnfilled) ? "pulse 2s infinite" : "none" }} />
-          <div>
-            <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+    <div style={{ background: C.surface, border: "1px solid " + borderColor + (st === "active" ? "80" : "40"), borderRadius: 14, overflow: "hidden", transition: "all 0.2s" }}>
+      <div onClick={() => setExpanded(e => !e)} style={{ padding: "14px 16px", cursor: "pointer", display: "flex", justifyContent: "space-between", alignItems: "center", gap: 8 }}>
+        <div style={{ display: "flex", alignItems: "center", gap: 10, minWidth: 0 }}>
+          <div style={{ width: 8, height: 8, flexShrink: 0, borderRadius: "50%", background: borderColor, animation: st === "active" ? "pulse 2s infinite" : "none" }} />
+          <div style={{ minWidth: 0 }}>
+            <div style={{ display: "flex", alignItems: "center", gap: 6, flexWrap: "wrap" }}>
               <span style={{ fontWeight: 700, fontSize: 16, fontFamily: "'JetBrains Mono',monospace" }}>{pos.symbol}</span>
               <span style={{ fontSize: 11, padding: "2px 8px", borderRadius: 20, background: dirColor + "20", color: dirColor, fontWeight: 700, border: "1px solid " + dirColor + "40" }}>{pos.dir}</span>
-              <span style={{ fontSize: 10, color: C.muted }}>{pos.lev}x</span>
-                  {pos.status === "canceled" && <span style={{ fontSize: 10, padding: "1px 6px", borderRadius: 8, background: C.surface2, color: C.muted, border: "1px solid " + C.border }}>주문취소</span>}
-                  {isUnfilled && <span style={{ fontSize: 10, padding: "1px 6px", borderRadius: 8, background: "rgba(90,96,128,0.2)", color: C.muted, border: "1px solid " + C.border }}>미체결</span>}
-                  {isPartial && <span style={{ fontSize: 10, padding: "1px 6px", borderRadius: 8, background: C.yellowDim, color: C.yellow, border: "1px solid " + C.yellow + "40" }}>부분체결</span>}
+              {pos.lev && <span style={{ fontSize: 10, color: C.muted }}>{pos.lev}x</span>}
+              {STATUS_BADGE[st] && <Badge text={STATUS_BADGE[st][0]} color={C[STATUS_BADGE[st][1]]} />}
+              {isPartial && <Badge text="부분체결" color={C.yellow} />}
+              {pos.ruleBreak && <Badge text="규칙위반" color={C.red} />}
+              {outcome && <Badge text={outcome[0]} color={C[outcome[1]]} />}
             </div>
-                <div style={{ fontSize: 11, color: C.muted, marginTop: 2 }}>{pos.date} · 점수 {pos.score}점{isPartial && pos.filledQty && pos.targetQty ? <span style={{ color: C.yellow }}> · {pos.filledQty}/{pos.targetQty} 체결</span> : null}</div>
+            <div style={{ fontSize: 11, color: C.muted, marginTop: 2 }}>{timeLine} · {pos.score}점{isPartial && pos.filledQty && pos.targetQty ? <span style={{ color: C.yellow }}> · {pos.filledQty}/{pos.targetQty} 체결</span> : null}</div>
           </div>
         </div>
-        <div style={{ textAlign: "right" }}>
-          {pos.status !== "active" && pos.realPnl !== undefined
-            ? <div style={{ fontFamily: "'JetBrains Mono',monospace", fontSize: 15, fontWeight: 700, color: pnlColor }}>{pos.realPnl >= 0 ? "+" : ""}{pos.realPnl.toFixed(2)} USDT</div>
+        <div style={{ textAlign: "right", flexShrink: 0 }}>
+          {(st === "win" || st === "loss") && pos.realPnl !== undefined
+            ? <div style={{ fontFamily: "'JetBrains Mono',monospace", fontSize: 15, fontWeight: 700, color: pnlColor }}>{fmtUsdt(pos.realPnl)}</div>
             : pos.entry && <div style={{ fontFamily: "'JetBrains Mono',monospace", fontSize: 13, color: C.muted }}>@ {pos.entry}</div>
           }
           <div style={{ fontSize: 10, color: C.muted }}>{expanded ? "▲" : "▼"}</div>
@@ -769,7 +773,6 @@ function PositionCard({ pos, onClose, onView, onUpdateQty, onFill, onCancelOrder
 
       {expanded && (
         <div style={{ padding: "0 16px 14px", borderTop: "1px solid " + C.border }}>
-          {/* 차트 이미지 썸네일 */}
           {pos.images && pos.images.length > 0 && (
             <div style={{ marginTop: 12, marginBottom: 12 }}>
               <div style={{ fontSize: 10, color: C.muted, marginBottom: 6, fontWeight: 600 }}>차트 이미지 {pos.images.length}장</div>
@@ -781,52 +784,180 @@ function PositionCard({ pos, onClose, onView, onUpdateQty, onFill, onCancelOrder
             </div>
           )}
           <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 8, marginTop: 12, marginBottom: 12 }}>
-            {[["진입가", pos.entry ? pos.entry + " USDT" : "-"], ["손절가", pos.sl ? pos.sl + " USDT" : "-"], ["목표가", pos.tp ? pos.tp + " USDT" : "-"], ["손익비", pos.rrRatio ? "1:" + pos.rrRatio : "-"], ["증거금", pos.posSizeUsdt ? pos.posSizeUsdt + " USDT" : "-"], ["손절 시", pos.maxLoss ? "-" + pos.maxLoss + " USDT" : "-"]].map(([label, val]) => (
+            {[[notEntered ? "계획 진입가" : "진입가", pos.entry || "-"], ["손절가", pos.sl || "-"], ["목표가", pos.tp || "-"], ["손익비", pos.rrRatio ? "1:" + pos.rrRatio : "-"], ["증거금", pos.posSizeUsdt ? pos.posSizeUsdt + " USDT" : "-"], ["손절 시", pos.maxLoss ? "-" + pos.maxLoss + " USDT" : "-"]].map(([label, val]) => (
               <div key={label} style={{ background: C.surface2, borderRadius: 8, padding: "8px 10px" }}>
                 <div style={{ fontSize: 9, color: C.muted, marginBottom: 2 }}>{label}</div>
                 <div style={{ fontFamily: "'JetBrains Mono',monospace", fontSize: 12, fontWeight: 600 }}>{val}</div>
               </div>
             ))}
           </div>
-          {pos.memo && <div style={{ padding: "8px 12px", background: C.surface2, borderRadius: 8, fontSize: 12, color: C.muted, marginBottom: 12, lineHeight: 1.5 }}>{pos.memo}</div>}
+          {pos.memo && <div style={{ padding: "8px 12px", background: C.surface2, borderRadius: 8, fontSize: 12, color: C.muted, marginBottom: 12, lineHeight: 1.5, whiteSpace: "pre-wrap" }}>{pos.memo}</div>}
 
-          {/* 미체결 시뮬레이션 */}
-          {isUnfilled && (pos.simWin !== undefined || pos.simLoss !== undefined) && (
-            <div style={{ padding: "12px 14px", background: "rgba(77,166,255,0.06)", borderRadius: 10, border: "1px solid " + C.blue + "30", marginBottom: 12 }}>
-              <div style={{ fontSize: 11, color: C.blue, fontWeight: 600, marginBottom: 8 }}>📊 체결됐다면?</div>
+          {/* 진입 안 한 분석: 체결됐다면? */}
+          {sim && (
+            <div style={{ padding: "12px 14px", background: C.blue + "0d", borderRadius: 10, border: "1px solid " + C.blue + "30", marginBottom: 12 }}>
+              <div style={{ fontSize: 11, color: C.blue, fontWeight: 600, marginBottom: 8 }}>📊 계획대로 체결됐다면?</div>
               <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8 }}>
-                <div style={{ padding: "8px 10px", background: "rgba(99,255,180,0.08)", borderRadius: 8 }}>
-                  <div style={{ fontSize: 10, color: C.muted, marginBottom: 2 }}>목표가 달성 시</div>
-                  <div style={{ fontFamily: "'JetBrains Mono',monospace", fontSize: 14, fontWeight: 700, color: C.accent }}>{pos.simWin == null ? "-" : fmtUsdt(pos.simWin)}</div>
+                <div style={{ padding: "8px 10px", background: C.accentDim, borderRadius: 8 }}>
+                  <div style={{ fontSize: 10, color: C.muted, marginBottom: 2 }}>목표가 도달 시</div>
+                  <div style={{ fontFamily: "'JetBrains Mono',monospace", fontSize: 14, fontWeight: 700, color: C.accent }}>{sim.win == null ? "-" : fmtUsdt(sim.win)}</div>
                 </div>
-                <div style={{ padding: "8px 10px", background: "rgba(255,77,109,0.08)", borderRadius: 8 }}>
+                <div style={{ padding: "8px 10px", background: C.redDim, borderRadius: 8 }}>
                   <div style={{ fontSize: 10, color: C.muted, marginBottom: 2 }}>손절 시</div>
-                  <div style={{ fontFamily: "'JetBrains Mono',monospace", fontSize: 14, fontWeight: 700, color: C.red }}>{pos.simLoss == null ? "-" : fmtUsdt(pos.simLoss)}</div>
+                  <div style={{ fontFamily: "'JetBrains Mono',monospace", fontSize: 14, fontWeight: 700, color: C.red }}>{sim.loss == null ? "-" : fmtUsdt(sim.loss)}</div>
                 </div>
               </div>
             </div>
           )}
 
+          {/* 진입 안 한 분석: 사후 결과 기록 */}
+          {(st === "analysis" || st === "canceled") && onOutcome && (
+            <div style={{ marginBottom: 12 }}>
+              <div style={{ fontSize: 11, color: C.muted, fontWeight: 600, marginBottom: 6 }}>분석 결과는? (가격이 어디에 먼저 닿았나)</div>
+              <div style={{ display: "flex", gap: 6 }}>
+                {Object.entries(OUTCOME_LABEL).map(([key, [label, color]]) => {
+                  const on = pos.virtualOutcome === key;
+                  return <button key={key} onClick={() => onOutcome(pos.id, on ? null : key)} style={{ flex: 1, padding: "10px 0", borderRadius: 9, border: "1px solid " + (on ? C[color] : C.border), background: on ? C[color] + "20" : "transparent", color: on ? C[color] : C.muted, fontSize: 12, fontWeight: 700, cursor: "pointer", fontFamily: "'Space Grotesk',sans-serif" }}>{label}</button>;
+                })}
+              </div>
+            </div>
+          )}
+
           {/* 부분 체결 — 추가 체결 수량 입력 */}
-          {isPartial && (
+          {isPartial && onUpdateQty && (
             <div style={{ padding: "12px 14px", background: C.yellowDim, borderRadius: 10, border: "1px solid " + C.yellow + "40", marginBottom: 12 }}>
               <div style={{ fontSize: 11, color: C.yellow, fontWeight: 600, marginBottom: 8 }}>+ 추가 체결 수량 합산</div>
               <div style={{ display: "flex", gap: 8 }}>
-                <input type="number" inputMode="decimal" value={addQtyInput} onChange={e => setAddQtyInput(e.target.value)} placeholder="추가 체결된 수량" style={{ flex: 1, background: C.surface, border: "1px solid " + C.yellow + "50", color: C.text, borderRadius: 8, padding: "8px 10px", fontFamily: "'JetBrains Mono',monospace", fontSize: 13 }} />
+                <input type="number" inputMode="decimal" value={addQtyInput} onChange={e => setAddQtyInput(e.target.value)} placeholder="추가 체결된 수량" style={{ flex: 1, background: C.surface, border: "1px solid " + C.yellow + "50", color: C.text, borderRadius: 8, padding: "8px 10px", fontFamily: "'JetBrains Mono',monospace" }} />
                 <button onClick={() => { if (parseFloat(addQtyInput) > 0) { onUpdateQty(pos.id, parseFloat(addQtyInput)); setAddQtyInput(""); } }} style={{ padding: "8px 14px", borderRadius: 8, border: "none", background: C.yellow, color: "#000", fontWeight: 700, fontSize: 12, cursor: "pointer", fontFamily: "'Space Grotesk',sans-serif" }}>합산</button>
               </div>
               <div style={{ fontSize: 11, color: C.yellow, marginTop: 6 }}>현재 {pos.filledQty} / 목표 {pos.targetQty} 계약</div>
             </div>
           )}
 
-          <div style={{ display: "flex", gap: 8 }}>
-            <button onClick={() => onView(pos)} style={{ flex: 1, padding: "11px 0", borderRadius: 9, border: "1px solid " + C.border, background: "transparent", color: C.muted, fontSize: 12, fontWeight: 600, cursor: "pointer", fontFamily: "'Space Grotesk',sans-serif" }}>상세 보기</button>
-            {isUnfilled && onFill && <button onClick={() => onFill(pos.id)} style={{ flex: 1, padding: "11px 0", borderRadius: 9, border: "none", background: C.blue, color: "#000", fontSize: 12, fontWeight: 700, cursor: "pointer", fontFamily: "'Space Grotesk',sans-serif" }}>체결됨</button>}
-            {isUnfilled && onCancelOrder && <button onClick={() => onCancelOrder(pos.id)} style={{ flex: 1, padding: "11px 0", borderRadius: 9, border: "1px solid " + C.border, background: "transparent", color: C.muted, fontSize: 12, fontWeight: 600, cursor: "pointer", fontFamily: "'Space Grotesk',sans-serif" }}>주문 취소</button>}
-            {(pos.status === "active") && <button onClick={() => onClose(pos)} style={{ flex: 2, padding: "11px 0", borderRadius: 9, border: "none", background: C.accent, color: "#000", fontSize: 12, fontWeight: 700, cursor: "pointer", fontFamily: "'Space Grotesk',sans-serif" }}>청산 기록하기</button>}
+          <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+            {btn("상세", () => onView(pos))}
+            {st === "analysis" && onEnter && <>{btn("⏳ 주문 걸어둠", () => onEnter(pos, "pending"))}{btn("✓ 진입 기록", () => onEnter(pos, "fill"), "primary", 1.3)}</>}
+            {st === "pending" && onEnter && <>{btn("미체결·취소", () => onCancelOrder(pos.id))}{btn("✓ 체결됨", () => onEnter(pos, "fill"), "primary", 1.3)}</>}
+            {st === "canceled" && onEnter && btn("나중에 진입함", () => onEnter(pos, "fill"))}
+            {st === "active" && onEnter && btn("진입 수정", () => onEnter(pos, "fill"))}
+            {st === "active" && onClose && btn("청산 기록하기", () => onClose(pos), "primary", 2)}
           </div>
         </div>
       )}
+    </div>
+  );
+}
+
+// ── 진입 기록 창 (분석 → 지정가 대기 / 체결) ────────────────
+// mode "pending": 주문만 걸어둠 · "fill": 실제 체결(진입가·시간·배율·증거금·체결량)
+function EntryModal({ pos, mode, feePct, onSave, onCancel }) {
+  const isFill = mode === "fill";
+  const [entry, setEntry] = useState(String(pos.entry || ""));
+  const [sl, setSl] = useState(String(pos.sl || ""));
+  const [tp, setTp] = useState(String(pos.tp || ""));
+  const [lev, setLev] = useState(String(pos.lev || "10"));
+  const [margin, setMargin] = useState(String(pos.posSizeUsdt || ""));
+  const [at, setAt] = useState(toLocalInput(isFill ? pos.entryAt : pos.orderAt));
+  const [fillType, setFillType] = useState(pos.fillType === "partial" ? "partial" : "full");
+  const [targetQty, setTargetQty] = useState(pos.targetQty ? String(pos.targetQty) : "");
+  const [filledQty, setFilledQty] = useState(pos.filledQty ? String(pos.filledQty) : "");
+  const [saving, setSaving] = useState(false);
+
+  const fillRatio = isFill ? fillRatioOf({ fillType, targetQty, filledQty }) : 1;
+  const m = tradeMetrics({ dir: pos.dir, entry, sl, tp, lev, margin, fillRatio, feePct });
+  const threshold = pos.threshold ?? 0;
+  const checks = gateChecksFor({ score: pos.score || 0, threshold, dir: pos.dir, m });
+  const passed = checks.every(c => c.ok);
+  const dataOk = checks.filter(c => c.data).every(c => c.ok);
+
+  const save = async () => {
+    if (!dataOk || saving) return;
+    if (!passed && !confirm("게이트 조건을 통과하지 못했습니다.\n규칙 위반으로 기록할까요?")) return;
+    setSaving(true);
+    const d = new Date(at);
+    const when = (isNaN(d) ? new Date() : d).toISOString();
+    await onSave({
+      entry, sl, tp, lev,
+      posSizeUsdt: round2(m.marginN),
+      rrRatio: round2(m.rrRatio), maxLoss: round2(m.maxLoss),
+      liqPrice: m.liqPrice ? Number(m.liqPrice.toFixed(6)) : null,
+      ruleBreak: !passed,
+      ...(isFill ? {
+        status: "active", entryAt: when, date: when.slice(0, 10),
+        fillType, targetQty: parseFloat(targetQty) || null,
+        filledQty: fillType === "partial" ? (parseFloat(filledQty) || 0) : (parseFloat(targetQty) || null),
+      } : { status: "pending", orderAt: when }),
+    });
+    setSaving(false);
+  };
+
+  const field = (label, val, set, extra = {}) => (
+    <div>
+      <div style={{ fontSize: 11, color: C.muted, marginBottom: 5, fontWeight: 600 }}>{label}</div>
+      <input type="number" inputMode="decimal" value={val} onChange={e => set(e.target.value)} placeholder="0" style={{ fontFamily: "'JetBrains Mono',monospace", ...extra }} />
+    </div>
+  );
+
+  return (
+    <div className="tg-sheet" onClick={onCancel} style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.8)", zIndex: 1000, display: "flex", alignItems: "center", justifyContent: "center", padding: 24 }}>
+      <div onClick={e => e.stopPropagation()} style={{ background: C.surface, border: "1px solid " + C.border, borderRadius: 16, padding: 24, width: "100%", maxWidth: 460, overflowY: "auto" }}>
+        <div style={{ fontSize: 18, fontWeight: 700, marginBottom: 4 }}>{pos.symbol} {pos.dir} · {isFill ? "진입 기록" : "지정가 주문"}</div>
+        <div style={{ fontSize: 12, color: C.muted, marginBottom: 16 }}>{isFill ? "실제로 체결된 값으로 입력하세요. 분석 때 계획값이 미리 채워져 있어요." : "걸어둔 주문 조건을 확인하세요. 체결되면 '체결됨'을 누르면 됩니다."}</div>
+        <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
+            {field(isFill ? "체결가 (USDT)" : "주문가 (USDT)", entry, setEntry)}
+            {field("레버리지 (x)", lev, setLev)}
+            {field("손절가 (SL)", sl, setSl)}
+            {field("목표가 (TP)", tp, setTp)}
+          </div>
+          {field("투입 증거금 (USDT)", margin, setMargin)}
+          <div>
+            <div style={{ fontSize: 11, color: C.muted, marginBottom: 5, fontWeight: 600 }}>{isFill ? "진입 시간" : "주문 시간"}</div>
+            <input type="datetime-local" value={at} onChange={e => setAt(e.target.value)} />
+          </div>
+          {isFill && (
+            <div>
+              <div style={{ fontSize: 11, color: C.muted, marginBottom: 6, fontWeight: 600 }}>체결</div>
+              <div style={{ display: "flex", gap: 8, marginBottom: 8 }}>
+                {[["full", "전량 체결", C.accent], ["partial", "부분 체결", C.yellow]].map(([key, label, color]) => (
+                  <button key={key} onClick={() => setFillType(key)} style={{ flex: 1, padding: "10px 0", borderRadius: 10, border: "2px solid " + (fillType === key ? color : C.border), background: fillType === key ? color + "18" : "transparent", color: fillType === key ? color : C.muted, fontWeight: 700, fontSize: 12, cursor: "pointer", fontFamily: "'Space Grotesk',sans-serif" }}>{label}</button>
+                ))}
+              </div>
+              {fillType === "partial" && (
+                <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
+                  {field("목표 수량", targetQty, setTargetQty)}
+                  {field("체결 수량", filledQty, setFilledQty, { borderColor: C.yellow + "80" })}
+                </div>
+              )}
+            </div>
+          )}
+
+          {m.entryN > 0 && m.marginN > 0 && (
+            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 8 }}>
+              {[["손절 시", m.slSideOk ? "-" + m.maxLoss.toFixed(2) : "-", C.red], ["목표 시", m.expectedProfit > 0 ? "+" + m.expectedProfit.toFixed(2) : "-", C.accent], ["청산가", m.liqPrice ? m.liqPrice.toFixed(2) : "-", m.slBeyondLiq ? C.red : C.muted]].map(([l, v, c]) => (
+                <div key={l} style={{ background: C.surface2, borderRadius: 8, padding: "8px 10px" }}>
+                  <div style={{ fontSize: 10, color: C.muted }}>{l}</div>
+                  <div style={{ fontFamily: "'JetBrains Mono',monospace", fontSize: 13, fontWeight: 700, color: c }}>{v}</div>
+                </div>
+              ))}
+            </div>
+          )}
+
+          {!passed && (
+            <div style={{ padding: "10px 12px", borderRadius: 10, background: C.redDim, border: "1px solid " + C.red + "40", fontSize: 12, color: C.red, lineHeight: 1.6 }}>
+              🔒 게이트 미통과 — 저장하면 <b>규칙 위반</b>으로 기록됩니다
+              {checks.filter(c => !c.ok).map(c => <div key={c.label}>✕ {c.label}</div>)}
+            </div>
+          )}
+        </div>
+        <div style={{ display: "flex", gap: 10, marginTop: 16 }}>
+          <button onClick={onCancel} style={{ flex: 1, padding: "13px 0", borderRadius: 10, border: "1px solid " + C.border, background: "transparent", color: C.muted, fontWeight: 600, cursor: "pointer", fontFamily: "'Space Grotesk',sans-serif" }}>취소</button>
+          <button onClick={save} disabled={!dataOk || saving} style={{ flex: 2, padding: "13px 0", borderRadius: 10, border: passed ? "none" : "1px solid " + C.red, background: !dataOk ? C.surface2 : passed ? C.accent : C.redDim, color: !dataOk ? C.muted : passed ? "#000" : C.red, fontWeight: 700, cursor: "pointer", fontFamily: "'Space Grotesk',sans-serif", opacity: saving ? 0.6 : 1 }}>
+            {saving ? "저장 중..." : !dataOk ? "진입가·증거금 입력 필요" : isFill ? "✓ 진입 기록 저장" : "⏳ 주문 저장"}
+          </button>
+        </div>
+      </div>
     </div>
   );
 }
@@ -932,11 +1063,49 @@ function StatsView({ positions }) {
     cumData.push({ x: i + 1, y: running });
   });
 
-  if (!closed.length) return (
-    <Card style={{ textAlign: "center", padding: 40 }}>
-      <div style={{ fontSize: 32, marginBottom: 12 }}>📊</div>
-      <div style={{ color: C.muted, fontSize: 14 }}>청산된 포지션이 없습니다</div>
+  // 분석 적중률 — 진입 여부와 무관하게 "가격이 TP/SL 중 어디에 먼저 닿았나"
+  const judged = positions.filter(p => outcomeOf(p) === "tp" || outcomeOf(p) === "sl");
+  const hits = judged.filter(p => outcomeOf(p) === "tp").length;
+  const notEnteredJudged = positions.filter(p => (p.status === "analysis" || p.status === "canceled") && p.virtualOutcome);
+  const missed = notEnteredJudged.filter(p => p.virtualOutcome === "tp");
+  const avoided = notEnteredJudged.filter(p => p.virtualOutcome === "sl");
+  const unjudged = positions.filter(p => (p.status === "analysis" || p.status === "canceled") && !p.virtualOutcome).length;
+  // 규칙 준수 vs 위반
+  const ruleGroups = [["규칙대로 진입", closed.filter(p => !p.ruleBreak), C.accent], ["규칙 위반 진입", closed.filter(p => p.ruleBreak), C.red]];
+
+  const analysisCard = (
+    <Card accent={C.blue}>
+      <div style={{ fontSize: 12, color: C.blue, fontWeight: 700, marginBottom: 12 }}>🎯 분석 적중률 (진입 여부 무관)</div>
+      {judged.length === 0 ? (
+        <div style={{ fontSize: 13, color: C.muted, lineHeight: 1.6 }}>분석 일지에서 결과(TP 먼저 / SL 먼저)를 기록하면 여기에 집계됩니다.{unjudged ? ` 결과 미기록 ${unjudged}건.` : ""}</div>
+      ) : (
+        <>
+          <div style={{ display: "flex", alignItems: "baseline", gap: 10, marginBottom: 12 }}>
+            <span style={{ fontFamily: "'JetBrains Mono',monospace", fontSize: 28, fontWeight: 700, color: hits / judged.length >= 0.5 ? C.accent : C.red }}>{Math.round(hits / judged.length * 100)}%</span>
+            <span style={{ fontSize: 12, color: C.muted }}>{hits}/{judged.length}건 방향 적중{unjudged ? ` · 결과 미기록 ${unjudged}건` : ""}</span>
+          </div>
+          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8 }}>
+            <div style={{ padding: "10px 12px", background: C.surface2, borderRadius: 10 }}>
+              <div style={{ fontSize: 10, color: C.muted }}>놓친 기회 (안 들어갔는데 TP)</div>
+              <div style={{ fontFamily: "'JetBrains Mono',monospace", fontSize: 16, fontWeight: 700, color: C.yellow }}>{missed.length}건</div>
+            </div>
+            <div style={{ padding: "10px 12px", background: C.surface2, borderRadius: 10 }}>
+              <div style={{ fontSize: 10, color: C.muted }}>잘 피함 (안 들어갔는데 SL)</div>
+              <div style={{ fontFamily: "'JetBrains Mono',monospace", fontSize: 16, fontWeight: 700, color: C.accent }}>{avoided.length}건</div>
+            </div>
+          </div>
+        </>
+      )}
     </Card>
+  );
+
+  if (!closed.length) return (
+    <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
+      {analysisCard}
+      <Card style={{ textAlign: "center", padding: 32 }}>
+        <div style={{ color: C.muted, fontSize: 14 }}>청산된 거래가 아직 없습니다</div>
+      </Card>
+    </div>
   );
 
   return (
@@ -954,6 +1123,31 @@ function StatsView({ positions }) {
           </Card>
         ))}
       </div>
+
+      {analysisCard}
+
+      {/* 규칙 준수 vs 위반 */}
+      {closed.some(p => p.ruleBreak) && (
+        <Card accent={C.red}>
+          <div style={{ fontSize: 12, color: C.red, fontWeight: 700, marginBottom: 12 }}>🚦 게이트 규칙 준수 vs 위반</div>
+          <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+            {ruleGroups.filter(([, arr]) => arr.length).map(([label, arr, color]) => {
+              const w = Math.round(arr.filter(p => p.status === "win").length / arr.length * 100);
+              const pnl = arr.reduce((a, p) => a + (p.realPnl || 0), 0);
+              return (
+                <div key={label} style={{ display: "flex", alignItems: "center", gap: 12, padding: "10px 14px", background: C.surface2, borderRadius: 10 }}>
+                  <div style={{ width: 8, height: 8, borderRadius: "50%", background: color }} />
+                  <span style={{ fontSize: 13, color: C.muted, flex: 1 }}>{label} ({arr.length}건)</span>
+                  <div style={{ textAlign: "right" }}>
+                    <div style={{ fontFamily: "'JetBrains Mono',monospace", fontSize: 15, fontWeight: 700, color: w >= 50 ? C.accent : C.red }}>{w}%</div>
+                    <div style={{ fontFamily: "'JetBrains Mono',monospace", fontSize: 11, color: pnl >= 0 ? C.accent : C.red }}>{fmtUsdt(pnl)}</div>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        </Card>
+      )}
 
       {/* 점수대별 승률 */}
       {closed.length >= 3 && (
@@ -1307,6 +1501,7 @@ export default function App() {
   const [loadError, setLoadError] = useState("");
   const [showWizard, setShowWizard] = useState(false);
   const [closeTarget, setCloseTarget] = useState(null);
+  const [entryTarget, setEntryTarget] = useState(null); // { pos, mode: "pending" | "fill" }
   const [detailPos, setDetailPos] = useState(null);
   const [seed, setSeed] = useState({ initial: 0, withdrawals: [] });
   const [showSeedModal, setShowSeedModal] = useState(false);
@@ -1345,7 +1540,7 @@ export default function App() {
     setLoaded(false); setLoadError("");
     try {
       const [ps, sd, cl, st] = await Promise.all([loadPositions(), loadData("seed"), loadData("checklist"), loadData("settings")]);
-      setPositions(ps);
+      setPositions(ps.map(normalizePos));
       if (sd) setSeed(sd);
       if (cl) { setChecklist(cl); setEditableChecklist(JSON.parse(JSON.stringify(cl))); }
       if (st) setSettings({ ...DEFAULT_SETTINGS, ...st });
@@ -1409,8 +1604,18 @@ export default function App() {
   };
 
   const handleComplete = async (data) => {
-    if (await upsertPos(data, "✓ 포지션 저장됨")) { setShowWizard(false); setTab("positions"); }
+    const msg = { analysis: "📝 분석 저장됨", pending: "⏳ 지정가 주문 저장됨", active: "✓ 진입 저장됨" }[data.status];
+    if (await upsertPos(data, msg)) { setShowWizard(false); setTab(data.status === "analysis" ? "journal" : "positions"); }
   };
+
+  // 분석 → 지정가 대기 / 체결 (진입가·시간·배율·증거금)
+  const handleEntrySave = async (patch) => {
+    const msg = patch.status === "active" ? "✓ 진입 기록됨" : "⏳ 주문 저장됨";
+    if (await patchPos(entryTarget.pos.id, patch, msg)) { setEntryTarget(null); setTab("positions"); }
+  };
+
+  // 진입 안 한 분석의 사후 결과 (tp | sl | none | null)
+  const handleOutcome = (id, outcome) => patchPos(id, { virtualOutcome: outcome, outcomeAt: outcome ? nowIso() : null });
 
   const handleClose = async (result) => {
     if (await patchPos(closeTarget.id, result, "✓ 청산 기록됨")) setCloseTarget(null);
@@ -1422,12 +1627,10 @@ export default function App() {
     return { filledQty: Math.round(newFilled * 10000) / 10000, fillType: isFull ? "full" : "partial" };
   });
 
-  // 미체결 → 체결
-  const handleFill = id => patchPos(id, p => ({ status: "active", fillType: "full", filledQty: p.targetQty, date: todayStr() }), "✓ 체결 처리됨");
-  // 미체결 → 주문 취소 (기록엔 남기고 통계에선 제외)
+  // 지정가 대기 → 미체결·취소 (분석 일지로 이동, 결과는 나중에 기록 가능)
   const handleCancelOrder = id => {
-    if (!confirm("주문을 취소 처리할까요? (기록 탭에 남고 통계에서는 제외됩니다)")) return;
-    return patchPos(id, { status: "canceled", exitDate: todayStr() });
+    if (!confirm("미체결·취소로 옮길까요?\n분석 일지에 남고, 나중에 결과(TP/SL)를 기록할 수 있어요.")) return;
+    return patchPos(id, { status: "canceled", canceledAt: nowIso() }, "분석 일지로 이동");
   };
 
   const deletePos = id => attempt(async () => {
@@ -1436,7 +1639,9 @@ export default function App() {
   }, "삭제됨");
 
   const closed = positions.filter(isClosed);
-  const history = positions.filter(p => isClosed(p) || p.status === "canceled");
+  const history = positions.filter(isClosed);
+  const journal = positions.filter(p => p.status === "analysis" || p.status === "canceled");
+  const journalUnjudged = journal.filter(p => !p.virtualOutcome).length;
 
   // 시드 계산
   const totalPnl = closed.reduce((a, p) => a + (p.realPnl || 0), 0);
@@ -1444,9 +1649,10 @@ export default function App() {
   const currentSeed = seed.initial + totalPnl - totalWithdrawals;
   const seedReturn = seed.initial > 0 ? ((currentSeed - seed.initial) / seed.initial * 100) : 0;
 
-  const TABS = [["positions", "📍", "포지션"], ["history", "📋", "기록"], ["stats", "📊", "통계"], ["settings", "⚙️", "설정"]];
+  const TABS = [["positions", "📍", "포지션"], ["journal", "📝", "분석"], ["history", "📋", "기록"], ["stats", "📊", "통계"]];
+  const TITLES = { positions: "포지션", journal: "분석 일지", history: "청산 기록", stats: "통계", settings: "설정" };
   const openWizard = () => { setShowWizard(true); window.scrollTo(0, 0); };
-  const cardProps = { onClose: setCloseTarget, onView: setDetailPos, onUpdateQty: handleUpdateQty, onFill: handleFill, onCancelOrder: handleCancelOrder };
+  const cardProps = { feePct: settings.feePct, onClose: setCloseTarget, onView: setDetailPos, onUpdateQty: handleUpdateQty, onEnter: (pos, mode) => setEntryTarget({ pos, mode }), onCancelOrder: handleCancelOrder, onOutcome: handleOutcome };
 
   const head = (
     <Head>
@@ -1499,7 +1705,7 @@ export default function App() {
 
   const fullActive = positions.filter(p => p.status === "active" && p.fillType !== "partial");
   const partials = positions.filter(p => p.status === "active" && p.fillType === "partial");
-  const unfilled = positions.filter(p => p.status === "unfilled");
+  const pendingOrders = positions.filter(p => p.status === "pending");
 
   // 상세 보기용 근거 목록 (신규: checkedItems / 구버전: checked + checklist)
   const detailItems = detailPos ? (detailPos.checkedItems || Object.entries(detailPos.checked || {})
@@ -1539,9 +1745,10 @@ export default function App() {
 
           {TABS.map(([id, icon, label]) => (
             <button key={id} onClick={() => setTab(id)} style={{ padding: "12px 14px", borderRadius: 10, border: "none", background: tab === id ? C.accent + "18" : "transparent", color: tab === id ? C.accent : C.muted, fontWeight: tab === id ? 700 : 400, fontSize: 14, cursor: "pointer", textAlign: "left", fontFamily: "'Space Grotesk',sans-serif", borderLeft: "3px solid " + (tab === id ? C.accent : "transparent") }}>
-              {icon} {label}
+              {icon} {label}{id === "journal" && journalUnjudged > 0 ? <span style={{ marginLeft: 6, fontSize: 11, color: C.yellow }}>{journalUnjudged}</span> : null}
             </button>
           ))}
+          <button onClick={() => setTab("settings")} style={{ padding: "12px 14px", borderRadius: 10, border: "none", background: tab === "settings" ? C.accent + "18" : "transparent", color: tab === "settings" ? C.accent : C.muted, fontWeight: tab === "settings" ? 700 : 400, fontSize: 14, cursor: "pointer", textAlign: "left", fontFamily: "'Space Grotesk',sans-serif", borderLeft: "3px solid " + (tab === "settings" ? C.accent : "transparent") }}>⚙️ 설정</button>
 
           <div style={{ flex: 1 }} />
 
@@ -1558,10 +1765,11 @@ export default function App() {
           {/* 상단 헤더 */}
           <div className="tg-header" style={{ borderBottom: "1px solid " + C.border, background: C.surface, position: "sticky", top: 0, zIndex: 50, display: "flex", alignItems: "center", justifyContent: "space-between", gap: 10 }}>
             <div style={{ fontWeight: 700, fontSize: 17 }}>
-              {showWizard ? "새 분석" : TABS.find(t => t[0] === tab)[2]}
+              {showWizard ? "새 분석" : TITLES[tab]}
             </div>
             <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
               {seedChip}
+              <button onClick={() => { setShowWizard(false); setTab("settings"); }} aria-label="설정" style={{ width: 36, height: 36, borderRadius: 10, border: "1px solid " + (tab === "settings" ? C.accent : C.border), background: "transparent", cursor: "pointer", fontSize: 16 }}>⚙️</button>
               <button onClick={toggleTheme} aria-label="테마" style={{ width: 36, height: 36, borderRadius: 10, border: "1px solid " + C.border, background: "transparent", cursor: "pointer", fontSize: 16 }}>{isDark ? "☀️" : "🌙"}</button>
             </div>
           </div>
@@ -1574,23 +1782,36 @@ export default function App() {
               <AnalysisWizard onComplete={handleComplete} onCancel={() => setShowWizard(false)} checklist={checklist} settings={settings} />
             ) : tab === "positions" ? (
               <div style={{ display: "flex", flexDirection: "column", gap: 16, maxWidth: 720 }}>
-                {fullActive.length + partials.length + unfilled.length === 0 && (
+                {fullActive.length + partials.length + pendingOrders.length === 0 && (
                   <Card style={{ textAlign: "center", padding: 40 }}>
                     <div style={{ fontSize: 40, marginBottom: 12 }}>🚪</div>
                     <div style={{ fontSize: 16, fontWeight: 600, marginBottom: 6 }}>열린 포지션 없음</div>
-                    <div style={{ fontSize: 13, color: C.muted, marginBottom: 20 }}>게이트({settings.threshold}점)를 통과해야 진입할 수 있습니다</div>
+                    <div style={{ fontSize: 13, color: C.muted, marginBottom: 20, lineHeight: 1.6 }}>분석은 언제든 기록하고, 진입은 게이트({settings.threshold}점)를 통과했을 때만</div>
                     <button onClick={openWizard} style={{ padding: "13px 24px", borderRadius: 10, border: "none", background: C.accent, color: "#000", fontWeight: 700, fontSize: 14, cursor: "pointer", fontFamily: "'Space Grotesk',sans-serif" }}>새 분석 시작하기</button>
                   </Card>
                 )}
                 {section(C.accent, "진행 중", fullActive, true)}
                 {section(C.yellow, "부분 체결", partials, true)}
-                {section(C.muted, "미체결 (지정가 대기)", unfilled, false)}
+                {section(C.muted, "지정가 대기", pendingOrders, false)}
+              </div>
+            ) : tab === "journal" ? (
+              <div style={{ display: "flex", flexDirection: "column", gap: 12, maxWidth: 720 }}>
+                {journal.length === 0
+                  ? <Card style={{ textAlign: "center", padding: 40 }}>
+                      <div style={{ fontSize: 32, marginBottom: 10 }}>📝</div>
+                      <div style={{ color: C.muted, fontSize: 14, lineHeight: 1.6 }}>진입하지 않은 분석이 여기에 쌓여요.<br />나중에 TP/SL 중 어디에 먼저 닿았는지 기록하면<br />통계에서 분석 적중률을 볼 수 있어요.</div>
+                    </Card>
+                  : <>
+                      {journalUnjudged > 0 && <div style={{ fontSize: 12, color: C.yellow }}>결과 미기록 {journalUnjudged}건 — 카드를 눌러 TP/SL 결과를 남겨주세요</div>}
+                      {journal.map(p => <PositionCard key={p.id} pos={p} {...cardProps} />)}
+                    </>
+                }
               </div>
             ) : tab === "history" ? (
               <div style={{ display: "flex", flexDirection: "column", gap: 12, maxWidth: 720 }}>
                 {history.length === 0
                   ? <Card style={{ textAlign: "center", padding: 40 }}><div style={{ color: C.muted, fontSize: 14 }}>청산된 포지션이 없습니다</div></Card>
-                  : history.map(p => <PositionCard key={p.id} pos={p} onClose={setCloseTarget} onView={setDetailPos} />)
+                  : history.map(p => <PositionCard key={p.id} pos={p} feePct={settings.feePct} onView={setDetailPos} />)
                 }
               </div>
             ) : tab === "stats" ? (
@@ -1625,6 +1846,9 @@ export default function App() {
         </div>
       )}
 
+      {/* 진입 기록 모달 */}
+      {entryTarget && <EntryModal key={entryTarget.pos.id + entryTarget.mode} pos={entryTarget.pos} mode={entryTarget.mode} feePct={settings.feePct} onSave={handleEntrySave} onCancel={() => setEntryTarget(null)} />}
+
       {/* 청산 모달 */}
       {closeTarget && <CloseModal pos={closeTarget} onSave={handleClose} onCancel={() => setCloseTarget(null)} feePct={settings.feePct} />}
 
@@ -1652,7 +1876,25 @@ export default function App() {
                   {item.comment && <div style={{ fontSize: 12, color: C.muted, marginTop: 5, paddingTop: 5, borderTop: "1px solid " + C.accent + "20" }}>💬 {item.comment}</div>}
                 </div>
               ))}
-              {detailPos.liqPrice && <div style={{ fontSize: 12, color: C.muted }}>예상 청산가: <span style={{ fontFamily: "'JetBrains Mono',monospace" }}>{detailPos.liqPrice}</span></div>}
+              {/* 타임라인 · 계획 vs 실제 */}
+              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8 }}>
+                {[
+                  ["분석", fmtDT(detailPos.createdAt) || detailPos.date],
+                  ["주문", fmtDT(detailPos.orderAt)],
+                  ["진입", fmtDT(detailPos.entryAt)],
+                  ["청산", detailPos.exitDate || ""],
+                  ["계획 진입가", detailPos.plan?.entry],
+                  ["실제 진입가", detailPos.entryAt ? detailPos.entry : ""],
+                  ["레버리지 · 증거금", detailPos.lev ? `${detailPos.lev}x · ${detailPos.posSizeUsdt || "-"} USDT` : ""],
+                  ["예상 청산가", detailPos.liqPrice],
+                ].filter(([, v]) => v).map(([l, v]) => (
+                  <div key={l} style={{ background: C.surface2, borderRadius: 8, padding: "8px 10px" }}>
+                    <div style={{ fontSize: 10, color: C.muted }}>{l}</div>
+                    <div style={{ fontFamily: "'JetBrains Mono',monospace", fontSize: 12, fontWeight: 600 }}>{v}</div>
+                  </div>
+                ))}
+              </div>
+              {detailPos.ruleBreak && <div style={{ fontSize: 12, color: C.red }}>⚠️ 게이트 미통과 상태에서 진입 (규칙 위반)</div>}
               {detailPos.memo && <div style={{ padding: "10px 12px", background: C.surface2, borderRadius: 8, fontSize: 13, color: C.muted, whiteSpace: "pre-wrap" }}>{detailPos.memo}</div>}
               {detailPos.aiAdvice && (
                 <div style={{ padding: "12px 14px", background: "rgba(123,47,255,0.08)", border: "1px solid rgba(123,47,255,0.2)", borderRadius: 10, fontSize: 13, lineHeight: 1.7, whiteSpace: "pre-wrap" }}>
