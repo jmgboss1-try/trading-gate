@@ -1,7 +1,7 @@
 // pages/api/images.js — 차트 이미지 1장 = Redis 키 1개
 // POST { dataUrl } → { id }   /   GET ?id= → 이미지 바이너리 (<img src>로 바로 사용)
 import crypto from "crypto";
-import { redis, IMG_PREFIX } from "../../lib/redis";
+import { storageError, redis, IMG_PREFIX } from "../../lib/redis";
 import { requireAuth } from "../../lib/auth";
 
 export const config = { api: { bodyParser: { sizeLimit: "4mb" } } };
@@ -33,6 +33,6 @@ export default async function handler(req, res) {
     }
     res.status(405).end();
   } catch (e) {
-    res.status(500).json({ error: e.message });
+    res.status(500).json({ error: storageError(e, "images") });
   }
 }

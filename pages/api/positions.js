@@ -1,7 +1,7 @@
 // pages/api/positions.js — 포지션을 하나씩 저장 (전체 배열을 한 키에 몰아넣지 않음)
 // GET → { positions }   PUT { position } → 저장/수정   DELETE ?id= → 삭제(이미지 포함)
 import crypto from "crypto";
-import { redis, PREFIX, POS_HASH, IMG_PREFIX, parseJSON } from "../../lib/redis";
+import { storageError, redis, PREFIX, POS_HASH, IMG_PREFIX, parseJSON } from "../../lib/redis";
 import { requireAuth } from "../../lib/auth";
 
 export const config = { api: { bodyParser: { sizeLimit: "1mb" } } };
@@ -78,6 +78,6 @@ export default async function handler(req, res) {
     }
     res.status(405).end();
   } catch (e) {
-    res.status(500).json({ error: e.message });
+    res.status(500).json({ error: storageError(e, "positions") });
   }
 }

@@ -1,5 +1,5 @@
 // pages/api/login.js — POST: 로그인 / DELETE: 로그아웃
-import { redis, PREFIX } from "../../lib/redis";
+import { storageError, redis, PREFIX } from "../../lib/redis";
 import { checkPassword, isConfigured, makeToken, setSessionCookie, clearSessionCookie } from "../../lib/auth";
 
 const MAX_FAILS = 10;      // 15분에 10번 틀리면 잠금
@@ -26,6 +26,6 @@ export default async function handler(req, res) {
     setSessionCookie(res, makeToken());
     res.json({ ok: true });
   } catch (e) {
-    res.status(500).json({ error: e.message });
+    res.status(500).json({ error: storageError(e, "login") });
   }
 }

@@ -1,5 +1,6 @@
 import { useState, useEffect, useRef } from "react";
 import Head from "next/head";
+import { Eye, EyeOff, Activity, NotebookPen, History, BarChart3, Settings, Sun, Moon, LogOut, Clock, Sparkles, ShieldCheck, Target, Gauge, TrendingUp, Calculator, Lock, LockOpen, AlertTriangle, MessageSquare, ImagePlus, LineChart, Plus, ArrowLeft, Check } from "lucide-react";
 
 // ── 상수 ──────────────────────────────────────────────────
 const SYMBOLS = ["BTC/USDT", "ETH/USDT", "SOL/USDT", "XRP/USDT", "BNB/USDT", "DOGE/USDT", "기타"];
@@ -11,7 +12,6 @@ const DEFAULT_SETTINGS = { threshold: 12, feePct: 0.05 };
 const ANALYSIS_ITEMS = [
   {
     group: "시장 구조",
-    icon: "📊",
     items: [
       { id: "htf_trend", label: "상위 타임프레임 추세", desc: "4H/1D 기준 추세 방향이 진입 방향과 일치하는가", score: 3 },
       { id: "price_level", label: "주요 레벨 근접", desc: "지지/저항, 피보나치 0.618/0.786/0.886 근처인가", score: 3 },
@@ -20,7 +20,6 @@ const ANALYSIS_ITEMS = [
   },
   {
     group: "기술적 근거",
-    icon: "📈",
     items: [
       { id: "chart_pattern", label: "차트 패턴", desc: "쐐기, 삼각수렴, 플래그, 헤드앤숄더 등 완성된 패턴", score: 2 },
       { id: "candle_pattern", label: "캔들 패턴", desc: "핀바, 도지, 엔걸핑 등 반전 캔들 시그널", score: 1 },
@@ -32,7 +31,6 @@ const ANALYSIS_ITEMS = [
   },
   {
     group: "리스크 & 심리",
-    icon: "🧠",
     items: [
       { id: "rr_ratio", label: "손익비 1:2 이상", desc: "목표가 대비 손절폭이 절반 이하인가", score: 3 },
       { id: "clear_sl", label: "명확한 손절라인", desc: "논리적인 손절 위치가 차트상 명확히 보이는가", score: 2 },
@@ -251,6 +249,22 @@ async function uploadImages(list = []) {
 }
 
 // ── 컴포넌트 ───────────────────────────────────────────────
+// 로고: 아치형 게이트
+function Logo({ size = 44 }) {
+  return (
+    <div style={{ width: size, height: size, borderRadius: size * 0.3, background: "linear-gradient(135deg," + C.accent + "," + C.blue + ")", display: "flex", alignItems: "center", justifyContent: "center", boxShadow: "0 10px 30px " + C.accent + "30", flexShrink: 0 }}>
+      <svg width={size * 0.56} height={size * 0.56} viewBox="0 0 24 24" fill="none" stroke="#04110b" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
+        <path d="M5 21V11a7 7 0 0 1 14 0v10" /><path d="M12 4.2V21" /><path d="M3 21h18" />
+      </svg>
+    </div>
+  );
+}
+
+// 아이콘 + 텍스트 한 줄
+const IL = ({ icon: I, children, size = 14, gap = 6, color }) => (
+  <span style={{ display: "inline-flex", alignItems: "center", gap, color }}><I size={size} strokeWidth={2.2} />{children}</span>
+);
+
 function Card({ children, style, accent }) {
   return (
     <div style={{ background: C.surface, border: "1px solid " + (accent ? accent + "40" : C.border), borderRadius: 14, padding: 20, position: "relative", overflow: "hidden", ...style }}>
@@ -419,7 +433,7 @@ function AnalysisWizard({ onComplete, onCancel, checklist, settings }) {
     </div>
   ) : (
     <div className="tg-wide-only">
-      <button onClick={() => fileRef.current.click()} style={{ width: "100%", minHeight: 240, border: "2px dashed " + C.border, borderRadius: 14, background: "transparent", color: C.muted, cursor: "pointer", fontSize: 14 }}>📊 차트를 올리면 이 화면에 고정됩니다</button>
+      <button onClick={() => fileRef.current.click()} style={{ width: "100%", minHeight: 240, border: "2px dashed " + C.border, borderRadius: 14, background: "transparent", color: C.muted, cursor: "pointer", fontSize: 14 }}>차트를 올리면 이 화면에 고정됩니다</button>
     </div>
   );
 
@@ -450,7 +464,7 @@ function AnalysisWizard({ onComplete, onCancel, checklist, settings }) {
 
           {/* 업로드 버튼 */}
           <button onClick={() => fileRef.current.click()} style={{ width: "100%", padding: 24, border: "2px dashed " + (images.length > 0 ? C.accent + "60" : C.border), borderRadius: 14, background: images.length > 0 ? C.accentDim : "transparent", cursor: "pointer", display: "flex", flexDirection: "column", alignItems: "center", gap: 8, color: images.length > 0 ? C.accent : C.muted }}>
-            <div style={{ fontSize: 32 }}>📊</div>
+            <ImagePlus size={30} strokeWidth={1.8} />
             <div style={{ fontSize: 14, fontWeight: 600 }}>{imgBusy ? "압축 중..." : images.length > 0 ? "+ 차트 추가 업로드" : "차트 이미지 업로드"}</div>
             <div style={{ fontSize: 11 }}>여러 장 선택 가능 · 좌우로 밀어서 넘기기</div>
           </button>
@@ -514,7 +528,7 @@ function AnalysisWizard({ onComplete, onCancel, checklist, settings }) {
           <ScoreMeter score={score} max={maxScore} threshold={threshold} />
           {checklist.map(group => (
             <Card key={group.group} accent={C.blue}>
-              <div style={{ fontSize: 12, color: C.blue, fontWeight: 700, marginBottom: 14, display: "flex", alignItems: "center", gap: 6 }}><span>{group.icon}</span>{group.group}</div>
+              <div style={{ fontSize: 12, color: C.blue, fontWeight: 700, marginBottom: 14, letterSpacing: 0.3 }}>{group.group}</div>
               <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
                 {group.items.map(item => {
                   const on = isChecked(item.id);
@@ -588,7 +602,7 @@ function AnalysisWizard({ onComplete, onCancel, checklist, settings }) {
               {/* 계산 결과 */}
               {entryN > 0 && slN > 0 && (
                 <div style={{ background: C.surface, borderRadius: 10, padding: 14, border: "1px solid " + C.border }}>
-                  <div style={{ fontSize: 11, color: C.muted, marginBottom: 10, fontWeight: 600 }}>📐 계산 결과</div>
+                  <div style={{ fontSize: 11, color: C.muted, marginBottom: 10, fontWeight: 600 }}><IL icon={Calculator} size={13}>계산 결과</IL></div>
                   <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
                     {[
                       ["손익비", rrRatio > 0 ? "1 : " + rrRatio.toFixed(2) : "-", rrRatio >= 2 ? C.accent : rrRatio >= 1 ? C.yellow : C.red],
@@ -603,10 +617,10 @@ function AnalysisWizard({ onComplete, onCancel, checklist, settings }) {
                       </div>
                     ))}
                   </div>
-                  {!slSideOk && <div style={{ marginTop: 10, padding: "8px 12px", background: C.redDim, borderRadius: 8, fontSize: 12, color: C.red }}>⚠️ {dir} 포지션의 손절가는 진입가보다 {dir === "롱" ? "낮아야" : "높아야"} 합니다.</div>}
-                  {slBeyondLiq && <div style={{ marginTop: 10, padding: "8px 12px", background: C.redDim, borderRadius: 8, fontSize: 12, color: C.red }}>⚠️ 손절가 전에 청산됩니다. 레버리지를 낮추세요.</div>}
+                  {!slSideOk && <div style={{ marginTop: 10, padding: "8px 12px", background: C.redDim, borderRadius: 8, fontSize: 12, color: C.red }}>{dir} 포지션의 손절가는 진입가보다 {dir === "롱" ? "낮아야" : "높아야"} 합니다.</div>}
+                  {slBeyondLiq && <div style={{ marginTop: 10, padding: "8px 12px", background: C.redDim, borderRadius: 8, fontSize: 12, color: C.red }}>손절가 전에 청산됩니다. 레버리지를 낮추세요.</div>}
                   <div style={{ marginTop: 10, fontSize: 11, color: C.muted }}>수수료 편도 {feePct}% 반영 · 청산가는 격리 기준 근사치</div>
-                  {rrRatio > 0 && rrRatio < 2 && <div style={{ marginTop: 10, padding: "8px 12px", background: C.redDim, borderRadius: 8, fontSize: 12, color: C.red }}>⚠️ 손익비가 1:2 미만입니다. 목표가를 재검토하거나 진입을 재고하세요.</div>}
+                  {rrRatio > 0 && rrRatio < 2 && <div style={{ marginTop: 10, padding: "8px 12px", background: C.redDim, borderRadius: 8, fontSize: 12, color: C.red }}>손익비가 1:2 미만입니다. 목표가를 재검토하거나 진입을 재고하세요.</div>}
                 </div>
               )}
             </div>
@@ -631,7 +645,7 @@ function AnalysisWizard({ onComplete, onCancel, checklist, settings }) {
           {/* 게이트 */}
           <div style={{ padding: 18, borderRadius: 14, border: "2px solid " + (passed ? C.accent : C.red), background: passed ? C.accentDim : C.redDim }}>
             <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 12 }}>
-              <div style={{ fontSize: 18, fontWeight: 700, color: passed ? C.accent : C.red }}>{passed ? "🟢 진입 게이트 OPEN" : "🔒 진입 게이트 CLOSED"}</div>
+              <div style={{ fontSize: 18, fontWeight: 700, color: passed ? C.accent : C.red }}><IL icon={passed ? LockOpen : Lock} size={18} gap={8}>{passed ? "진입 게이트 OPEN" : "진입 게이트 CLOSED"}</IL></div>
               <div style={{ fontFamily: "'JetBrains Mono',monospace", fontSize: 20, fontWeight: 700, color: score >= threshold ? C.accent : C.red }}>{score}<span style={{ fontSize: 12, color: C.muted }}>/{maxScore}</span></div>
             </div>
             <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
@@ -676,7 +690,7 @@ function AnalysisWizard({ onComplete, onCancel, checklist, settings }) {
 
           {/* AI 분석 */}
           <Card accent="#7b2fff">
-            <div style={{ fontSize: 12, color: "#b47aff", fontWeight: 700, marginBottom: 10, display: "flex", alignItems: "center", gap: 6 }}>🤖 AI 진입 검토</div>
+            <div style={{ fontSize: 12, color: "#b47aff", fontWeight: 700, marginBottom: 10, display: "flex", alignItems: "center", gap: 6 }}><IL icon={Sparkles}>AI 진입 검토</IL></div>
             <button onClick={getAiAdvice} disabled={aiLoading} style={{ width: "100%", padding: "11px 0", borderRadius: 10, border: "none", background: "linear-gradient(135deg,#7b2fff,#4da6ff)", color: "#fff", fontWeight: 700, fontSize: 13, cursor: "pointer", fontFamily: "'Space Grotesk',sans-serif", opacity: aiLoading ? 0.7 : 1 }}>
               {aiLoading ? "분석 중..." : "AI에게 이 진입 검토 요청하기"}
             </button>
@@ -686,17 +700,17 @@ function AnalysisWizard({ onComplete, onCancel, checklist, settings }) {
           {/* 저장 방식 선택 */}
           <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
             <button onClick={() => handleComplete("analysis")} disabled={saving || !finalSymbol} style={{ padding: "15px 0", borderRadius: 12, border: "1px solid " + C.blue, background: C.blue + "18", color: C.blue, fontWeight: 700, fontSize: 15, cursor: "pointer", fontFamily: "'Space Grotesk',sans-serif", opacity: saving ? 0.6 : 1 }}>
-              {saving ? "저장 중..." : "📝 분석만 저장 (진입 안 함)"}
+              {saving ? "저장 중..." : <IL icon={NotebookPen} size={16} gap={8}>분석만 저장 (진입 안 함)</IL>}
             </button>
             <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
-              {[["pending", "⏳ 지정가 걸어둠"], ["active", "✓ 지금 진입함"]].map(([mode, label]) => (
+              {[["pending", "지정가 걸어둠", Clock], ["active", "지금 진입함", Check]].map(([mode, label, Ic]) => (
                 <button key={mode} onClick={() => handleComplete(mode)} disabled={saving || !dataOk} style={{ padding: "15px 0", borderRadius: 12, border: passed ? "none" : "1px solid " + C.red, background: !dataOk ? C.surface2 : passed ? C.accent : C.redDim, color: !dataOk ? C.muted : passed ? "#000" : C.red, fontWeight: 700, fontSize: 14, cursor: dataOk ? "pointer" : "not-allowed", fontFamily: "'Space Grotesk',sans-serif", opacity: saving ? 0.6 : 1 }}>
-                  {label}{dataOk && !passed ? " ⚠️" : ""}
+                  <IL icon={dataOk && !passed ? AlertTriangle : Ic} size={15}>{label}</IL>
                 </button>
               ))}
             </div>
             <div style={{ fontSize: 11, color: C.muted, lineHeight: 1.5 }}>
-              {!dataOk ? "진입·주문 기록은 진입가와 증거금이 있어야 해요 (4단계)." : !passed ? "⚠️ 게이트 미통과 상태로 진입하면 '규칙 위반'으로 기록되어 통계에서 따로 집계됩니다." : "실제 체결가·시간은 나중에 '진입 기록'에서 고칠 수 있어요."}
+              {!dataOk ? "진입·주문 기록은 진입가와 증거금이 있어야 해요 (4단계)." : !passed ? "게이트 미통과 상태로 진입하면 '규칙 위반'으로 기록되어 통계에서 따로 집계됩니다." : "실제 체결가·시간은 나중에 '진입 기록'에서 고칠 수 있어요."}
             </div>
             <button onClick={() => setStep(4)} style={{ padding: "12px 0", borderRadius: 12, border: "1px solid " + C.border, background: "transparent", color: C.muted, fontWeight: 600, fontSize: 14, cursor: "pointer", fontFamily: "'Space Grotesk',sans-serif" }}>← 이전</button>
           </div>
@@ -712,7 +726,7 @@ function AnalysisWizard({ onComplete, onCancel, checklist, settings }) {
 const STATUS_BADGE = {
   analysis: ["분석", "blue"], pending: ["지정가 대기", "muted"], canceled: ["미체결·취소", "muted"],
 };
-const OUTCOME_LABEL = { tp: ["✓ TP 먼저", "accent"], sl: ["✕ SL 먼저", "red"], none: ["– 둘 다 아님", "muted"] };
+const OUTCOME_LABEL = { tp: ["TP 먼저", "accent"], sl: ["SL 먼저", "red"], none: ["둘 다 아님", "muted"] };
 
 function Badge({ text, color }) {
   return <span style={{ fontSize: 10, padding: "1px 6px", borderRadius: 8, background: color + "18", color, border: "1px solid " + color + "40", whiteSpace: "nowrap" }}>{text}</span>;
@@ -796,7 +810,7 @@ function PositionCard({ pos, feePct = 0, onClose, onView, onUpdateQty, onEnter, 
           {/* 진입 안 한 분석: 체결됐다면? */}
           {sim && (
             <div style={{ padding: "12px 14px", background: C.blue + "0d", borderRadius: 10, border: "1px solid " + C.blue + "30", marginBottom: 12 }}>
-              <div style={{ fontSize: 11, color: C.blue, fontWeight: 600, marginBottom: 8 }}>📊 계획대로 체결됐다면?</div>
+              <div style={{ fontSize: 11, color: C.blue, fontWeight: 600, marginBottom: 8 }}><IL icon={LineChart} size={13}>계획대로 체결됐다면?</IL></div>
               <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8 }}>
                 <div style={{ padding: "8px 10px", background: C.accentDim, borderRadius: 8 }}>
                   <div style={{ fontSize: 10, color: C.muted, marginBottom: 2 }}>목표가 도달 시</div>
@@ -837,8 +851,8 @@ function PositionCard({ pos, feePct = 0, onClose, onView, onUpdateQty, onEnter, 
 
           <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
             {btn("상세", () => onView(pos))}
-            {st === "analysis" && onEnter && <>{btn("⏳ 주문 걸어둠", () => onEnter(pos, "pending"))}{btn("✓ 진입 기록", () => onEnter(pos, "fill"), "primary", 1.3)}</>}
-            {st === "pending" && onEnter && <>{btn("미체결·취소", () => onCancelOrder(pos.id))}{btn("✓ 체결됨", () => onEnter(pos, "fill"), "primary", 1.3)}</>}
+            {st === "analysis" && onEnter && <>{btn("주문 걸어둠", () => onEnter(pos, "pending"))}{btn("진입 기록", () => onEnter(pos, "fill"), "primary", 1.3)}</>}
+            {st === "pending" && onEnter && <>{btn("미체결·취소", () => onCancelOrder(pos.id))}{btn("체결됨", () => onEnter(pos, "fill"), "primary", 1.3)}</>}
             {st === "canceled" && onEnter && btn("나중에 진입함", () => onEnter(pos, "fill"))}
             {st === "active" && onEnter && btn("진입 수정", () => onEnter(pos, "fill"))}
             {st === "active" && onClose && btn("청산 기록하기", () => onClose(pos), "primary", 2)}
@@ -946,7 +960,7 @@ function EntryModal({ pos, mode, feePct, onSave, onCancel }) {
 
           {!passed && (
             <div style={{ padding: "10px 12px", borderRadius: 10, background: C.redDim, border: "1px solid " + C.red + "40", fontSize: 12, color: C.red, lineHeight: 1.6 }}>
-              🔒 게이트 미통과 — 저장하면 <b>규칙 위반</b>으로 기록됩니다
+              <div style={{ fontWeight: 700, marginBottom: 2 }}><IL icon={Lock} size={13}>게이트 미통과 — 저장하면 규칙 위반으로 기록됩니다</IL></div>
               {checks.filter(c => !c.ok).map(c => <div key={c.label}>✕ {c.label}</div>)}
             </div>
           )}
@@ -954,7 +968,7 @@ function EntryModal({ pos, mode, feePct, onSave, onCancel }) {
         <div style={{ display: "flex", gap: 10, marginTop: 16 }}>
           <button onClick={onCancel} style={{ flex: 1, padding: "13px 0", borderRadius: 10, border: "1px solid " + C.border, background: "transparent", color: C.muted, fontWeight: 600, cursor: "pointer", fontFamily: "'Space Grotesk',sans-serif" }}>취소</button>
           <button onClick={save} disabled={!dataOk || saving} style={{ flex: 2, padding: "13px 0", borderRadius: 10, border: passed ? "none" : "1px solid " + C.red, background: !dataOk ? C.surface2 : passed ? C.accent : C.redDim, color: !dataOk ? C.muted : passed ? "#000" : C.red, fontWeight: 700, cursor: "pointer", fontFamily: "'Space Grotesk',sans-serif", opacity: saving ? 0.6 : 1 }}>
-            {saving ? "저장 중..." : !dataOk ? "진입가·증거금 입력 필요" : isFill ? "✓ 진입 기록 저장" : "⏳ 주문 저장"}
+            {saving ? "저장 중..." : !dataOk ? "진입가·증거금 입력 필요" : isFill ? "진입 기록 저장" : "주문 저장"}
           </button>
         </div>
       </div>
@@ -1029,7 +1043,7 @@ function CloseModal({ pos, onSave, onCancel, feePct }) {
               </div>
             )}
             <button onClick={() => fileRef.current.click()} style={{ width: "100%", padding: "10px 0", borderRadius: 9, border: "1px dashed " + C.border, background: "transparent", color: C.muted, fontSize: 12, cursor: "pointer", fontFamily: "'Space Grotesk',sans-serif" }}>
-              {exitImages.length > 0 ? `📊 ${exitImages.length}장 업로드됨 · 추가하기` : "📊 청산 차트 업로드"}
+              <IL icon={ImagePlus}>{exitImages.length > 0 ? `${exitImages.length}장 업로드됨 · 추가하기` : "청산 차트 업로드"}</IL>
             </button>
           </div>
         </div>
@@ -1075,7 +1089,7 @@ function StatsView({ positions }) {
 
   const analysisCard = (
     <Card accent={C.blue}>
-      <div style={{ fontSize: 12, color: C.blue, fontWeight: 700, marginBottom: 12 }}>🎯 분석 적중률 (진입 여부 무관)</div>
+      <div style={{ fontSize: 12, color: C.blue, fontWeight: 700, marginBottom: 12 }}><IL icon={Target}>분석 적중률 (진입 여부 무관)</IL></div>
       {judged.length === 0 ? (
         <div style={{ fontSize: 13, color: C.muted, lineHeight: 1.6 }}>분석 일지에서 결과(TP 먼저 / SL 먼저)를 기록하면 여기에 집계됩니다.{unjudged ? ` 결과 미기록 ${unjudged}건.` : ""}</div>
       ) : (
@@ -1129,7 +1143,7 @@ function StatsView({ positions }) {
       {/* 규칙 준수 vs 위반 */}
       {closed.some(p => p.ruleBreak) && (
         <Card accent={C.red}>
-          <div style={{ fontSize: 12, color: C.red, fontWeight: 700, marginBottom: 12 }}>🚦 게이트 규칙 준수 vs 위반</div>
+          <div style={{ fontSize: 12, color: C.red, fontWeight: 700, marginBottom: 12 }}><IL icon={ShieldCheck}>게이트 규칙 준수 vs 위반</IL></div>
           <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
             {ruleGroups.filter(([, arr]) => arr.length).map(([label, arr, color]) => {
               const w = Math.round(arr.filter(p => p.status === "win").length / arr.length * 100);
@@ -1152,7 +1166,7 @@ function StatsView({ positions }) {
       {/* 점수대별 승률 */}
       {closed.length >= 3 && (
         <Card accent={C.accent}>
-          <div style={{ fontSize: 12, color: C.accent, fontWeight: 700, marginBottom: 14 }}>⚡ 점수대별 승률</div>
+          <div style={{ fontSize: 12, color: C.accent, fontWeight: 700, marginBottom: 14 }}><IL icon={Gauge}>점수대별 승률</IL></div>
           <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
             {(() => {
               const high = closed.filter(p => ratioOf(p) >= 0.6);
@@ -1184,7 +1198,7 @@ function StatsView({ positions }) {
       {/* 누적 손익 SVG 차트 */}
       {cumData.length > 1 && (
         <Card>
-          <div style={{ fontSize: 12, color: C.muted, marginBottom: 12, fontWeight: 600 }}>📈 누적 손익 추이</div>
+          <div style={{ fontSize: 12, color: C.muted, marginBottom: 12, fontWeight: 600 }}><IL icon={TrendingUp}>누적 손익 추이</IL></div>
           <svg width="100%" height="120" viewBox={`0 0 300 120`} preserveAspectRatio="none">
             {(() => {
               const ys = cumData.map(d => d.y);
@@ -1229,7 +1243,7 @@ function ChecklistSettings({ groups, onGroupsChange, onSave, settings, onSetting
 
   const addGroup = () => {
     if (!newGroupName.trim()) return;
-    update([...groups, { group: newGroupName.trim(), icon: "📌", items: [] }]);
+    update([...groups, { group: newGroupName.trim(), items: [] }]);
     setNewGroupName("");
   };
 
@@ -1277,7 +1291,7 @@ function ChecklistSettings({ groups, onGroupsChange, onSave, settings, onSetting
 
       {/* 게이트 / 수수료 */}
       <Card accent={C.accent}>
-        <div style={{ fontSize: 13, fontWeight: 700, color: C.accent, marginBottom: 12 }}>🚦 게이트 & 수수료</div>
+        <div style={{ fontSize: 13, fontWeight: 700, color: C.accent, marginBottom: 12 }}><IL icon={ShieldCheck}>게이트 & 수수료</IL></div>
         <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
           <div>
             <div style={{ fontSize: 11, color: C.muted, marginBottom: 5, fontWeight: 600 }}>진입 허가 최소 점수</div>
@@ -1295,7 +1309,7 @@ function ChecklistSettings({ groups, onGroupsChange, onSave, settings, onSetting
       {groups.map((group, gi) => (
         <Card key={gi} accent={C.blue}>
           <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 12 }}>
-            <div style={{ fontSize: 13, fontWeight: 700, color: C.blue }}>{group.icon} {group.group}</div>
+            <div style={{ fontSize: 13, fontWeight: 700, color: C.blue }}>{group.group}</div>
             <button onClick={() => removeGroup(gi)} style={{ background: "none", border: "none", color: C.muted, cursor: "pointer", fontSize: 12, padding: "2px 6px" }}>✕ 그룹삭제</button>
           </div>
 
@@ -1457,11 +1471,18 @@ function SeedModal({ seed, onSave, onCancel, totalPnl, currentSeed, seedReturn }
 }
 
 // ── 로그인 화면 ──────────────────────────────────────────
-function LoginScreen({ mode, onLogin }) {
+const STORAGE_MSG = {
+  missing_env: "이 배포에 저장소(Upstash) 환경변수가 없습니다. Vercel에서 UPSTASH_REDIS_REST_URL·TOKEN의 Preview/Production 체크를 확인하세요.",
+  unreachable: "저장소(Upstash)에 연결할 수 없습니다. UPSTASH_REDIS_REST_URL 값을 확인하세요.",
+  bad_token: "저장소(Upstash) 토큰이 맞지 않습니다. UPSTASH_REDIS_REST_TOKEN 값을 확인하세요.",
+};
+
+function LoginScreen({ mode, storage, onLogin }) {
   const [pw, setPw] = useState("");
   const [show, setShow] = useState(false);
   const [err, setErr] = useState("");
   const [busy, setBusy] = useState(false);
+  const [focus, setFocus] = useState(false);
   const submit = async (e) => {
     e.preventDefault();
     if (!pw || busy) return;
@@ -1469,28 +1490,40 @@ function LoginScreen({ mode, onLogin }) {
     try { await onLogin(pw); } catch (e2) { setErr(e2.message); }
     setBusy(false);
   };
+  const storageProblem = storage && storage !== "ok" ? STORAGE_MSG[storage] : null;
+  const ring = err ? C.red : focus ? C.accent : C.border;
   return (
-    <div style={{ minHeight: "100dvh", display: "flex", alignItems: "center", justifyContent: "center", padding: "24px 20px" }}>
-      <form onSubmit={submit} style={{ width: "100%", maxWidth: 360, display: "flex", flexDirection: "column", gap: 14 }}>
-        <div style={{ textAlign: "center", marginBottom: 8 }}>
-          <div style={{ fontSize: 44 }}>🚪</div>
-          <div style={{ fontSize: 24, fontWeight: 700, marginTop: 8 }}>TradeGate</div>
-          <div style={{ fontSize: 13, color: C.muted, marginTop: 4 }}>{mode === "unconfigured" ? "서버 설정이 필요합니다" : "비밀번호를 입력하세요"}</div>
+    <div style={{ minHeight: "100dvh", display: "flex", alignItems: "center", justifyContent: "center", padding: "24px 20px", background: "radial-gradient(1200px 600px at 50% -10%, " + C.accent + "14, transparent 60%)" }}>
+      <form onSubmit={submit} style={{ width: "100%", maxWidth: 360, display: "flex", flexDirection: "column", gap: 16 }}>
+        <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 14, marginBottom: 12 }}>
+          <Logo size={56} />
+          <div style={{ textAlign: "center" }}>
+            <div style={{ fontSize: 26, fontWeight: 700, letterSpacing: -0.6 }}>TradeGate</div>
+            <div style={{ fontSize: 13, color: C.muted, marginTop: 6 }}>{mode === "unconfigured" ? "서버 설정이 필요합니다" : "매매 일지에 로그인"}</div>
+          </div>
         </div>
+
         {mode === "unconfigured" ? (
-          <Card>
-            <div style={{ fontSize: 13, lineHeight: 1.7, color: C.text }}>
-              Vercel 프로젝트 → Settings → Environment Variables에 <b style={{ fontFamily: "'JetBrains Mono',monospace" }}>APP_PASSWORD</b>를 추가하고 다시 배포하세요.
-            </div>
-          </Card>
+          <div style={{ padding: 16, borderRadius: 14, background: C.surface, border: "1px solid " + C.border, fontSize: 13, lineHeight: 1.7 }}>
+            Vercel → Settings → Environment Variables에 <span style={{ fontFamily: "'JetBrains Mono',monospace", color: C.accent }}>APP_PASSWORD</span>를 추가한 뒤 다시 배포하세요.
+          </div>
         ) : (
           <>
-            <div style={{ position: "relative" }}>
-              <input type={show ? "text" : "password"} autoComplete="current-password" autoCapitalize="none" autoCorrect="off" spellCheck={false} autoFocus value={pw} onChange={e => setPw(e.target.value)} placeholder="비밀번호" style={{ padding: "14px 52px 14px 16px", borderRadius: 12, background: C.surface, border: "1px solid " + (err ? C.red : C.border), color: C.text, fontFamily: show ? "'JetBrains Mono',monospace" : undefined }} />
-              <button type="button" onClick={() => setShow(v => !v)} aria-label={show ? "비밀번호 숨기기" : "비밀번호 보기"} style={{ position: "absolute", right: 6, top: "50%", transform: "translateY(-50%)", width: 40, height: 40, border: "none", background: "transparent", cursor: "pointer", fontSize: 18 }}>{show ? "🙈" : "👁"}</button>
+            <div style={{ position: "relative", display: "flex", alignItems: "center", background: C.surface, border: "1px solid " + ring, borderRadius: 14, boxShadow: focus ? "0 0 0 4px " + C.accent + "18" : "none", transition: "border-color .15s, box-shadow .15s" }}>
+              <Lock size={17} color={C.muted} style={{ position: "absolute", left: 16, pointerEvents: "none" }} />
+              <input type={show ? "text" : "password"} autoComplete="current-password" autoCapitalize="none" autoCorrect="off" spellCheck={false} autoFocus
+                value={pw} onChange={e => setPw(e.target.value)} onFocus={() => setFocus(true)} onBlur={() => setFocus(false)} placeholder="비밀번호"
+                style={{ border: "none", background: "transparent", padding: "15px 52px 15px 44px", borderRadius: 14, color: C.text, letterSpacing: show || !pw ? 0 : 2 }} />
+              <button type="button" onClick={() => setShow(v => !v)} aria-label={show ? "비밀번호 숨기기" : "비밀번호 보기"} style={{ position: "absolute", right: 6, width: 40, height: 40, border: "none", background: "transparent", cursor: "pointer", color: C.muted, display: "flex", alignItems: "center", justifyContent: "center", borderRadius: 10 }}>
+                {show ? <EyeOff size={18} /> : <Eye size={18} />}
+              </button>
             </div>
-            {err && <div style={{ fontSize: 13, color: C.red }}>{err}</div>}
-            <button type="submit" disabled={!pw || busy} style={{ padding: "14px 0", borderRadius: 12, border: "none", background: C.accent, color: "#000", fontWeight: 700, fontSize: 15, cursor: "pointer", opacity: !pw || busy ? 0.6 : 1, fontFamily: "'Space Grotesk',sans-serif" }}>{busy ? "확인 중..." : "로그인"}</button>
+            {(err || storageProblem) && (
+              <div style={{ display: "flex", gap: 8, alignItems: "flex-start", fontSize: 13, color: C.red, lineHeight: 1.5 }}>
+                <AlertTriangle size={15} style={{ marginTop: 2, flexShrink: 0 }} /><span>{err || storageProblem}</span>
+              </div>
+            )}
+            <button type="submit" disabled={!pw || busy} style={{ padding: "15px 0", borderRadius: 14, border: "none", background: C.accent, color: "#04110b", fontWeight: 700, fontSize: 15, cursor: "pointer", opacity: !pw || busy ? 0.55 : 1, fontFamily: "'Space Grotesk',sans-serif", transition: "opacity .15s" }}>{busy ? "확인 중..." : "로그인"}</button>
           </>
         )}
       </form>
@@ -1515,6 +1548,7 @@ export default function App() {
   const [isDark, setIsDark] = useState(true);
   const [toast, setToast] = useState(null); // { msg, error }
   const [auth, setAuth] = useState("checking"); // checking | ok | login | unconfigured
+  const [storage, setStorage] = useState(null); // 서버 저장소 연결 상태
   const toastTimer = useRef();
 
   useEffect(() => {
@@ -1558,6 +1592,7 @@ export default function App() {
   useEffect(() => {
     onAuthLost = (j) => setAuth(j?.code === "NO_PASSWORD" ? "unconfigured" : "login");
     fetch("/api/session").then(r => r.json()).then(j => {
+      setStorage(j.storage);
       if (!j.configured) setAuth("unconfigured");
       else if (!j.authed) setAuth("login");
       else { setAuth("ok"); loadAll(); }
@@ -1582,7 +1617,7 @@ export default function App() {
   // 실패하면 토스트로 알리고 false 반환
   const attempt = async (fn, okMsg) => {
     try { await fn(); if (okMsg) showToast(okMsg); return true; }
-    catch (e) { if (!(e instanceof AuthError)) showToast("⚠️ " + e.message, true); return false; }
+    catch (e) { if (!(e instanceof AuthError)) showToast(e.message, true); return false; }
   };
   const persist = (key, value) => attempt(() => saveData(key, JSON.stringify(value)));
 
@@ -1608,13 +1643,13 @@ export default function App() {
   };
 
   const handleComplete = async (data) => {
-    const msg = { analysis: "📝 분석 저장됨", pending: "⏳ 지정가 주문 저장됨", active: "✓ 진입 저장됨" }[data.status];
+    const msg = { analysis: "분석 저장됨", pending: "지정가 주문 저장됨", active: "진입 저장됨" }[data.status];
     if (await upsertPos(data, msg)) { setShowWizard(false); setTab(data.status === "analysis" ? "journal" : "positions"); }
   };
 
   // 분석 → 지정가 대기 / 체결 (진입가·시간·배율·증거금)
   const handleEntrySave = async (patch) => {
-    const msg = patch.status === "active" ? "✓ 진입 기록됨" : "⏳ 주문 저장됨";
+    const msg = patch.status === "active" ? "진입 기록됨" : "주문 저장됨";
     if (await patchPos(entryTarget.pos.id, patch, msg)) { setEntryTarget(null); setTab("positions"); }
   };
 
@@ -1622,7 +1657,7 @@ export default function App() {
   const handleOutcome = (id, outcome) => patchPos(id, { virtualOutcome: outcome, outcomeAt: outcome ? nowIso() : null });
 
   const handleClose = async (result) => {
-    if (await patchPos(closeTarget.id, result, "✓ 청산 기록됨")) setCloseTarget(null);
+    if (await patchPos(closeTarget.id, result, "청산 기록됨")) setCloseTarget(null);
   };
 
   const handleUpdateQty = (id, addedQty) => patchPos(id, p => {
@@ -1653,7 +1688,7 @@ export default function App() {
   const currentSeed = seed.initial + totalPnl - totalWithdrawals;
   const seedReturn = seed.initial > 0 ? ((currentSeed - seed.initial) / seed.initial * 100) : 0;
 
-  const TABS = [["positions", "📍", "포지션"], ["journal", "📝", "분석"], ["history", "📋", "기록"], ["stats", "📊", "통계"]];
+  const TABS = [["positions", Activity, "포지션"], ["journal", NotebookPen, "분석"], ["history", History, "기록"], ["stats", BarChart3, "통계"]];
   const TITLES = { positions: "포지션", journal: "분석 일지", history: "청산 기록", stats: "통계", settings: "설정" };
   const openWizard = () => { setShowWizard(true); window.scrollTo(0, 0); };
   const cardProps = { feePct: settings.feePct, onClose: setCloseTarget, onView: setDetailPos, onUpdateQty: handleUpdateQty, onEnter: (pos, mode) => setEntryTarget({ pos, mode }), onCancelOrder: handleCancelOrder, onOutcome: handleOutcome };
@@ -1674,7 +1709,7 @@ export default function App() {
     <div style={{ background: C.bg, minHeight: "100dvh", color: C.text, fontFamily: "'Space Grotesk',sans-serif" }}>
       {head}
       <style dangerouslySetInnerHTML={{ __html: getCSS(isDark) }} />
-      <LoginScreen mode={auth} onLogin={handleLogin} />
+      <LoginScreen mode={auth} storage={storage} onLogin={handleLogin} />
     </div>
   );
 
@@ -1728,7 +1763,7 @@ export default function App() {
         {/* ── 사이드바 (펼친 화면 / 듀얼 왼쪽 화면) ── */}
         <div className="tg-side" style={{ background: C.surface, borderRight: "1px solid " + C.border, padding: "calc(20px + env(safe-area-inset-top)) 16px 20px", flexDirection: "column", gap: 8, position: "sticky", top: 0, height: "100dvh", overflowY: "auto" }}>
           <div style={{ marginBottom: 16 }}>
-            <div style={{ fontSize: 20, fontWeight: 700, letterSpacing: -0.5, marginBottom: 4 }}>TradeGate</div>
+            <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 4 }}><Logo size={30} /><span style={{ fontSize: 19, fontWeight: 700, letterSpacing: -0.5 }}>TradeGate</span></div>
             <div style={{ fontSize: 11, color: C.muted }}>코인 선물 · 게이트 {settings.threshold}점</div>
           </div>
 
@@ -1747,20 +1782,20 @@ export default function App() {
 
           <button onClick={openWizard} style={{ padding: "12px 14px", borderRadius: 10, border: "none", background: C.accent, color: "#000", fontWeight: 700, fontSize: 14, cursor: "pointer", marginBottom: 8, fontFamily: "'Space Grotesk',sans-serif" }}>+ 새 분석</button>
 
-          {TABS.map(([id, icon, label]) => (
+          {TABS.map(([id, Icon, label]) => (
             <button key={id} onClick={() => setTab(id)} style={{ padding: "12px 14px", borderRadius: 10, border: "none", background: tab === id ? C.accent + "18" : "transparent", color: tab === id ? C.accent : C.muted, fontWeight: tab === id ? 700 : 400, fontSize: 14, cursor: "pointer", textAlign: "left", fontFamily: "'Space Grotesk',sans-serif", borderLeft: "3px solid " + (tab === id ? C.accent : "transparent") }}>
-              {icon} {label}{id === "journal" && journalUnjudged > 0 ? <span style={{ marginLeft: 6, fontSize: 11, color: C.yellow }}>{journalUnjudged}</span> : null}
+              <IL icon={Icon} size={17} gap={10}>{label}</IL>{id === "journal" && journalUnjudged > 0 ? <span style={{ marginLeft: 8, fontSize: 11, color: C.yellow }}>{journalUnjudged}</span> : null}
             </button>
           ))}
-          <button onClick={() => setTab("settings")} style={{ padding: "12px 14px", borderRadius: 10, border: "none", background: tab === "settings" ? C.accent + "18" : "transparent", color: tab === "settings" ? C.accent : C.muted, fontWeight: tab === "settings" ? 700 : 400, fontSize: 14, cursor: "pointer", textAlign: "left", fontFamily: "'Space Grotesk',sans-serif", borderLeft: "3px solid " + (tab === "settings" ? C.accent : "transparent") }}>⚙️ 설정</button>
+          <button onClick={() => setTab("settings")} style={{ padding: "12px 14px", borderRadius: 10, border: "none", background: tab === "settings" ? C.accent + "18" : "transparent", color: tab === "settings" ? C.accent : C.muted, fontWeight: tab === "settings" ? 700 : 400, fontSize: 14, cursor: "pointer", textAlign: "left", fontFamily: "'Space Grotesk',sans-serif", borderLeft: "3px solid " + (tab === "settings" ? C.accent : "transparent") }}><IL icon={Settings} size={17} gap={10}>설정</IL></button>
 
           <div style={{ flex: 1 }} />
 
           <button onClick={toggleTheme} style={{ padding: "10px 14px", borderRadius: 10, border: "1px solid " + C.border, background: "transparent", color: C.muted, fontSize: 13, cursor: "pointer", textAlign: "left", fontFamily: "'Space Grotesk',sans-serif", display: "flex", alignItems: "center", gap: 8 }}>
-            <span>{isDark ? "☀️" : "🌙"}</span>
+            {isDark ? <Sun size={16} /> : <Moon size={16} />}
             <span>{isDark ? "라이트 모드" : "다크 모드"}</span>
           </button>
-          <button onClick={handleLogout} style={{ padding: "10px 14px", borderRadius: 10, border: "none", background: "transparent", color: C.muted, fontSize: 13, cursor: "pointer", textAlign: "left", fontFamily: "'Space Grotesk',sans-serif" }}>🔓 로그아웃</button>
+          <button onClick={handleLogout} style={{ padding: "10px 14px", borderRadius: 10, border: "none", background: "transparent", color: C.muted, fontSize: 13, cursor: "pointer", textAlign: "left", fontFamily: "'Space Grotesk',sans-serif" }}><IL icon={LogOut} size={15} gap={8}>로그아웃</IL></button>
         </div>
 
         {/* ── 메인 콘텐츠 ── */}
@@ -1773,12 +1808,12 @@ export default function App() {
             </div>
             <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
               {seedChip}
-              <button onClick={() => { setShowWizard(false); setTab("settings"); }} aria-label="설정" style={{ width: 36, height: 36, borderRadius: 10, border: "1px solid " + (tab === "settings" ? C.accent : C.border), background: "transparent", cursor: "pointer", fontSize: 16 }}>⚙️</button>
-              <button onClick={toggleTheme} aria-label="테마" style={{ width: 36, height: 36, borderRadius: 10, border: "1px solid " + C.border, background: "transparent", cursor: "pointer", fontSize: 16 }}>{isDark ? "☀️" : "🌙"}</button>
+              <button onClick={() => { setShowWizard(false); setTab("settings"); }} aria-label="설정" style={{ width: 36, height: 36, borderRadius: 10, border: "1px solid " + (tab === "settings" ? C.accent : C.border), background: "transparent", cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", color: tab === "settings" ? C.accent : C.muted }}><Settings size={17} /></button>
+              <button onClick={toggleTheme} aria-label="테마" style={{ width: 36, height: 36, borderRadius: 10, border: "1px solid " + C.border, background: "transparent", cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", color: C.muted }}>{isDark ? <Sun size={17} /> : <Moon size={17} />}</button>
             </div>
           </div>
 
-          {loadError && <div style={{ margin: "12px 14px 0", padding: "10px 14px", borderRadius: 10, background: C.redDim, color: C.red, fontSize: 13 }}>⚠️ 데이터를 불러오지 못했습니다: {loadError}. 지금 저장하면 기존 데이터를 덮어쓸 수 있으니 새로고침하세요.</div>}
+          {loadError && <div style={{ margin: "12px 14px 0", padding: "10px 14px", borderRadius: 10, background: C.redDim, color: C.red, fontSize: 13 }}>데이터를 불러오지 못했습니다: {loadError}. 지금 저장하면 기존 데이터를 덮어쓸 수 있으니 새로고침하세요.</div>}
 
           {/* 컨텐츠 영역 */}
           <div className="tg-content">
@@ -1788,7 +1823,7 @@ export default function App() {
               <div style={{ display: "flex", flexDirection: "column", gap: 16, maxWidth: 720 }}>
                 {fullActive.length + partials.length + pendingOrders.length === 0 && (
                   <Card style={{ textAlign: "center", padding: 40 }}>
-                    <div style={{ fontSize: 40, marginBottom: 12 }}>🚪</div>
+                    <div style={{ display: "flex", justifyContent: "center", marginBottom: 14 }}><Logo size={48} /></div>
                     <div style={{ fontSize: 16, fontWeight: 600, marginBottom: 6 }}>열린 포지션 없음</div>
                     <div style={{ fontSize: 13, color: C.muted, marginBottom: 20, lineHeight: 1.6 }}>분석은 언제든 기록하고, 진입은 게이트({settings.threshold}점)를 통과했을 때만</div>
                     <button onClick={openWizard} style={{ padding: "13px 24px", borderRadius: 10, border: "none", background: C.accent, color: "#000", fontWeight: 700, fontSize: 14, cursor: "pointer", fontFamily: "'Space Grotesk',sans-serif" }}>새 분석 시작하기</button>
@@ -1802,7 +1837,7 @@ export default function App() {
               <div style={{ display: "flex", flexDirection: "column", gap: 12, maxWidth: 720 }}>
                 {journal.length === 0
                   ? <Card style={{ textAlign: "center", padding: 40 }}>
-                      <div style={{ fontSize: 32, marginBottom: 10 }}>📝</div>
+                      <div style={{ display: "flex", justifyContent: "center", marginBottom: 12, color: C.muted }}><NotebookPen size={30} strokeWidth={1.6} /></div>
                       <div style={{ color: C.muted, fontSize: 14, lineHeight: 1.6 }}>진입하지 않은 분석이 여기에 쌓여요.<br />나중에 TP/SL 중 어디에 먼저 닿았는지 기록하면<br />통계에서 분석 적중률을 볼 수 있어요.</div>
                     </Card>
                   : <>
@@ -1823,7 +1858,7 @@ export default function App() {
             ) : (
               <div style={{ maxWidth: 720 }}>
                 <ChecklistSettings groups={editableChecklist} onGroupsChange={setEditableChecklist} onSave={saveChecklist} settings={settings} onSettingsSave={saveSettings} />
-                <button onClick={handleLogout} style={{ width: "100%", marginTop: 14, padding: "13px 0", borderRadius: 12, border: "1px solid " + C.border, background: "transparent", color: C.muted, fontWeight: 600, fontSize: 14, cursor: "pointer", fontFamily: "'Space Grotesk',sans-serif" }}>🔓 로그아웃</button>
+                <button onClick={handleLogout} style={{ width: "100%", marginTop: 14, padding: "13px 0", borderRadius: 12, border: "1px solid " + C.border, background: "transparent", color: C.muted, fontWeight: 600, fontSize: 14, cursor: "pointer", fontFamily: "'Space Grotesk',sans-serif", display: "flex", alignItems: "center", justifyContent: "center", gap: 8 }}><LogOut size={16} />로그아웃</button>
               </div>
             )}
           </div>
@@ -1831,12 +1866,12 @@ export default function App() {
           {/* ── 하단 탭바 (폰) ── */}
           {!showWizard && (
             <div className="tg-bottomnav" style={{ background: C.surface, borderTop: "1px solid " + C.border, alignItems: "center", justifyContent: "space-around" }}>
-              {TABS.slice(0, 2).map(([id, icon, label]) => (
-                <button key={id} onClick={() => setTab(id)} style={{ flex: 1, padding: "6px 0", border: "none", background: "transparent", color: tab === id ? C.accent : C.muted, fontSize: 11, fontWeight: tab === id ? 700 : 500, cursor: "pointer", display: "flex", flexDirection: "column", alignItems: "center", gap: 2 }}><span style={{ fontSize: 20 }}>{icon}</span>{label}</button>
+              {TABS.slice(0, 2).map(([id, Icon, label]) => (
+                <button key={id} onClick={() => setTab(id)} style={{ flex: 1, padding: "6px 0", border: "none", background: "transparent", color: tab === id ? C.accent : C.muted, fontSize: 11, fontWeight: tab === id ? 700 : 500, cursor: "pointer", display: "flex", flexDirection: "column", alignItems: "center", gap: 2 }}><Icon size={22} strokeWidth={tab === id ? 2.4 : 1.9} />{label}</button>
               ))}
-              <button onClick={openWizard} aria-label="새 분석" style={{ width: 56, height: 56, borderRadius: 18, border: "none", background: C.accent, color: "#000", fontSize: 28, fontWeight: 700, cursor: "pointer", marginTop: -20, boxShadow: "0 6px 20px " + C.accent + "50" }}>+</button>
-              {TABS.slice(2).map(([id, icon, label]) => (
-                <button key={id} onClick={() => setTab(id)} style={{ flex: 1, padding: "6px 0", border: "none", background: "transparent", color: tab === id ? C.accent : C.muted, fontSize: 11, fontWeight: tab === id ? 700 : 500, cursor: "pointer", display: "flex", flexDirection: "column", alignItems: "center", gap: 2 }}><span style={{ fontSize: 20 }}>{icon}</span>{label}</button>
+              <button onClick={openWizard} aria-label="새 분석" style={{ width: 56, height: 56, borderRadius: 18, border: "none", background: C.accent, color: "#000", cursor: "pointer", marginTop: -20, boxShadow: "0 6px 20px " + C.accent + "50", display: "flex", alignItems: "center", justifyContent: "center" }}><Plus size={28} strokeWidth={2.6} /></button>
+              {TABS.slice(2).map(([id, Icon, label]) => (
+                <button key={id} onClick={() => setTab(id)} style={{ flex: 1, padding: "6px 0", border: "none", background: "transparent", color: tab === id ? C.accent : C.muted, fontSize: 11, fontWeight: tab === id ? 700 : 500, cursor: "pointer", display: "flex", flexDirection: "column", alignItems: "center", gap: 2 }}><Icon size={22} strokeWidth={tab === id ? 2.4 : 1.9} />{label}</button>
               ))}
             </div>
           )}
@@ -1877,7 +1912,7 @@ export default function App() {
                     <span style={{ fontSize: 13, color: C.accent, fontWeight: 600 }}>✓ {item.label}</span>
                     <span style={{ fontFamily: "'JetBrains Mono',monospace", fontSize: 11, color: C.accent }}>+{item.score}점</span>
                   </div>
-                  {item.comment && <div style={{ fontSize: 12, color: C.muted, marginTop: 5, paddingTop: 5, borderTop: "1px solid " + C.accent + "20" }}>💬 {item.comment}</div>}
+                  {item.comment && <div style={{ fontSize: 12, color: C.muted, marginTop: 5, paddingTop: 5, borderTop: "1px solid " + C.accent + "20", display: "flex", gap: 6, alignItems: "flex-start" }}><MessageSquare size={13} style={{ marginTop: 2, flexShrink: 0 }} />{item.comment}</div>}
                 </div>
               ))}
               {/* 타임라인 · 계획 vs 실제 */}
@@ -1898,11 +1933,11 @@ export default function App() {
                   </div>
                 ))}
               </div>
-              {detailPos.ruleBreak && <div style={{ fontSize: 12, color: C.red }}>⚠️ 게이트 미통과 상태에서 진입 (규칙 위반)</div>}
+              {detailPos.ruleBreak && <div style={{ fontSize: 12, color: C.red }}><IL icon={AlertTriangle} size={13}>게이트 미통과 상태에서 진입 (규칙 위반)</IL></div>}
               {detailPos.memo && <div style={{ padding: "10px 12px", background: C.surface2, borderRadius: 8, fontSize: 13, color: C.muted, whiteSpace: "pre-wrap" }}>{detailPos.memo}</div>}
               {detailPos.aiAdvice && (
                 <div style={{ padding: "12px 14px", background: "rgba(123,47,255,0.08)", border: "1px solid rgba(123,47,255,0.2)", borderRadius: 10, fontSize: 13, lineHeight: 1.7, whiteSpace: "pre-wrap" }}>
-                  <div style={{ fontSize: 11, color: "#b47aff", fontWeight: 700, marginBottom: 6 }}>🤖 AI 분석</div>
+                  <div style={{ fontSize: 11, color: "#b47aff", fontWeight: 700, marginBottom: 6 }}><IL icon={Sparkles} size={13}>AI 분석</IL></div>
                   {detailPos.aiAdvice}
                 </div>
               )}

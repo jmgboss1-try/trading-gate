@@ -1,6 +1,6 @@
 // pages/api/data.js
 // 작은 설정성 데이터 전용 (포지션은 /api/positions, 이미지는 /api/images)
-import { redis, PREFIX } from "../../lib/redis";
+import { storageError, redis, PREFIX } from "../../lib/redis";
 import { requireAuth } from "../../lib/auth";
 
 const ALLOWED_KEYS = new Set(["seed", "checklist", "settings"]);
@@ -28,6 +28,6 @@ export default async function handler(req, res) {
     }
     res.status(405).end();
   } catch (e) {
-    res.status(500).json({ error: e.message });
+    res.status(500).json({ error: storageError(e, "data") });
   }
 }
