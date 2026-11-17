@@ -1473,6 +1473,8 @@ function SeedModal({ seed, onSave, onCancel, totalPnl, currentSeed, seedReturn }
 // ── 로그인 화면 ──────────────────────────────────────────
 const STORAGE_MSG = {
   missing_env: "이 배포에 저장소(Upstash) 환경변수가 없습니다. Vercel에서 UPSTASH_REDIS_REST_URL·TOKEN의 Preview/Production 체크를 확인하세요.",
+  bad_url: "저장소 주소 형식이 틀렸습니다. UPSTASH_REDIS_REST_URL은 https:// 로 시작하는 REST URL이어야 합니다 (redis:// 주소 아님).",
+  not_found: "저장소(Upstash) 데이터베이스를 찾을 수 없습니다. 삭제됐거나 주소가 틀렸을 수 있어요. Upstash 콘솔에서 확인하세요.",
   unreachable: "저장소(Upstash)에 연결할 수 없습니다. UPSTASH_REDIS_REST_URL 값을 확인하세요.",
   bad_token: "저장소(Upstash) 토큰이 맞지 않습니다. UPSTASH_REDIS_REST_TOKEN 값을 확인하세요.",
 };
