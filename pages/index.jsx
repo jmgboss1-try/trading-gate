@@ -1459,13 +1459,14 @@ function SeedModal({ seed, onSave, onCancel, totalPnl, currentSeed, seedReturn }
 // ── 로그인 화면 ──────────────────────────────────────────
 function LoginScreen({ mode, onLogin }) {
   const [pw, setPw] = useState("");
+  const [show, setShow] = useState(false);
   const [err, setErr] = useState("");
   const [busy, setBusy] = useState(false);
   const submit = async (e) => {
     e.preventDefault();
     if (!pw || busy) return;
     setBusy(true); setErr("");
-    try { await onLogin(pw); } catch (e2) { setErr(e2.message); setPw(""); }
+    try { await onLogin(pw); } catch (e2) { setErr(e2.message); }
     setBusy(false);
   };
   return (
@@ -1484,7 +1485,10 @@ function LoginScreen({ mode, onLogin }) {
           </Card>
         ) : (
           <>
-            <input type="password" autoComplete="current-password" autoFocus value={pw} onChange={e => setPw(e.target.value)} placeholder="비밀번호" style={{ padding: "14px 16px", borderRadius: 12, background: C.surface, border: "1px solid " + (err ? C.red : C.border), color: C.text }} />
+            <div style={{ position: "relative" }}>
+              <input type={show ? "text" : "password"} autoComplete="current-password" autoCapitalize="none" autoCorrect="off" spellCheck={false} autoFocus value={pw} onChange={e => setPw(e.target.value)} placeholder="비밀번호" style={{ padding: "14px 52px 14px 16px", borderRadius: 12, background: C.surface, border: "1px solid " + (err ? C.red : C.border), color: C.text, fontFamily: show ? "'JetBrains Mono',monospace" : undefined }} />
+              <button type="button" onClick={() => setShow(v => !v)} aria-label={show ? "비밀번호 숨기기" : "비밀번호 보기"} style={{ position: "absolute", right: 6, top: "50%", transform: "translateY(-50%)", width: 40, height: 40, border: "none", background: "transparent", cursor: "pointer", fontSize: 18 }}>{show ? "🙈" : "👁"}</button>
+            </div>
             {err && <div style={{ fontSize: 13, color: C.red }}>{err}</div>}
             <button type="submit" disabled={!pw || busy} style={{ padding: "14px 0", borderRadius: 12, border: "none", background: C.accent, color: "#000", fontWeight: 700, fontSize: 15, cursor: "pointer", opacity: !pw || busy ? 0.6 : 1, fontFamily: "'Space Grotesk',sans-serif" }}>{busy ? "확인 중..." : "로그인"}</button>
           </>
