@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef } from "react";
 import Head from "next/head";
-import { Eye, EyeOff, Activity, NotebookPen, History, BarChart3, Settings, Sun, Moon, LogOut, Clock, Sparkles, ShieldCheck, Target, Gauge, TrendingUp, Calculator, Lock, LockOpen, AlertTriangle, MessageSquare, ImagePlus, LineChart, Plus, ArrowLeft, Check } from "lucide-react";
+import { Eye, EyeOff, Activity, NotebookPen, History, BarChart3, Settings, Sun, Moon, LogOut, Clock, Sparkles, ShieldCheck, Target, Gauge, TrendingUp, Calculator, Lock, LockOpen, AlertTriangle, MessageSquare, ImagePlus, LineChart, Plus, ArrowLeft, Check, Trash2 } from "lucide-react";
 
 // ── 상수 ──────────────────────────────────────────────────
 const SYMBOLS = ["BTC/USDT", "ETH/USDT", "SOL/USDT", "XRP/USDT", "BNB/USDT", "DOGE/USDT", "기타"];
@@ -732,7 +732,7 @@ function Badge({ text, color }) {
   return <span style={{ fontSize: 10, padding: "1px 6px", borderRadius: 8, background: color + "18", color, border: "1px solid " + color + "40", whiteSpace: "nowrap" }}>{text}</span>;
 }
 
-function PositionCard({ pos, feePct = 0, onClose, onView, onUpdateQty, onEnter, onCancelOrder, onOutcome }) {
+function PositionCard({ pos, feePct = 0, onClose, onView, onUpdateQty, onEnter, onCancelOrder, onOutcome, onDelete }) {
   const [expanded, setExpanded] = useState(false);
   const [addQtyInput, setAddQtyInput] = useState("");
   const st = pos.status;
@@ -850,6 +850,7 @@ function PositionCard({ pos, feePct = 0, onClose, onView, onUpdateQty, onEnter, 
           )}
 
           <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+            {onDelete && <button onClick={() => onDelete(pos)} aria-label="삭제" title="삭제" style={{ width: 42, flexShrink: 0, padding: "11px 0", borderRadius: 9, border: "1px solid " + C.red + "40", background: "transparent", color: C.red, cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center" }}><Trash2 size={16} /></button>}
             {btn("상세", () => onView(pos))}
             {st === "analysis" && onEnter && <>{btn("주문 걸어둠", () => onEnter(pos, "pending"))}{btn("진입 기록", () => onEnter(pos, "fill"), "primary", 1.3)}</>}
             {st === "pending" && onEnter && <>{btn("미체결·취소", () => onCancelOrder(pos.id))}{btn("체결됨", () => onEnter(pos, "fill"), "primary", 1.3)}</>}
@@ -1693,7 +1694,8 @@ export default function App() {
   const TABS = [["positions", Activity, "포지션"], ["journal", NotebookPen, "분석"], ["history", History, "기록"], ["stats", BarChart3, "통계"]];
   const TITLES = { positions: "포지션", journal: "분석 일지", history: "청산 기록", stats: "통계", settings: "설정" };
   const openWizard = () => { setShowWizard(true); window.scrollTo(0, 0); };
-  const cardProps = { feePct: settings.feePct, onClose: setCloseTarget, onView: setDetailPos, onUpdateQty: handleUpdateQty, onEnter: (pos, mode) => setEntryTarget({ pos, mode }), onCancelOrder: handleCancelOrder, onOutcome: handleOutcome };
+  const askDelete = pos => { if (confirm(`${pos.symbol} ${pos.dir} 기록을 삭제할까요?\n차트 이미지도 함께 지워지고 되돌릴 수 없어요.`)) deletePos(pos.id); };
+  const cardProps = { onDelete: askDelete, feePct: settings.feePct, onClose: setCloseTarget, onView: setDetailPos, onUpdateQty: handleUpdateQty, onEnter: (pos, mode) => setEntryTarget({ pos, mode }), onCancelOrder: handleCancelOrder, onOutcome: handleOutcome };
 
   const head = (
     <Head>
@@ -1852,7 +1854,7 @@ export default function App() {
               <div style={{ display: "flex", flexDirection: "column", gap: 12, maxWidth: 720 }}>
                 {history.length === 0
                   ? <Card style={{ textAlign: "center", padding: 40 }}><div style={{ color: C.muted, fontSize: 14 }}>청산된 포지션이 없습니다</div></Card>
-                  : history.map(p => <PositionCard key={p.id} pos={p} feePct={settings.feePct} onView={setDetailPos} />)
+                  : history.map(p => <PositionCard key={p.id} pos={p} feePct={settings.feePct} onView={setDetailPos} onDelete={askDelete} />)
                 }
               </div>
             ) : tab === "stats" ? (
@@ -1959,7 +1961,7 @@ export default function App() {
                   </div>
                 </div>
               )}
-              <button onClick={() => { if (confirm("이 포지션을 삭제할까요?")) { deletePos(detailPos.id); setDetailPos(null); } }} style={{ padding: "12px 0", borderRadius: 10, border: "1px solid " + C.red + "40", background: C.redDim, color: C.red, fontWeight: 600, fontSize: 13, cursor: "pointer", fontFamily: "'Space Grotesk',sans-serif" }}>삭제</button>
+              <button onClick={() => { if (confirm("이 기록을 삭제할까요?\n차트 이미지도 함께 지워지고 되돌릴 수 없어요.")) { deletePos(detailPos.id); setDetailPos(null); } }} style={{ padding: "12px 0", borderRadius: 10, border: "1px solid " + C.red + "40", background: C.redDim, color: C.red, fontWeight: 600, fontSize: 13, cursor: "pointer", fontFamily: "'Space Grotesk',sans-serif" }}>삭제</button>
             </div>
           </div>
         </div>
