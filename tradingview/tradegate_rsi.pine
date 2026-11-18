@@ -1,0 +1,158 @@
+//@version=6
+// TradeGate RSI — 다이버전스 · 상위 타임프레임 RSI · 정보 패널 · 알림
+// TradeGate 체크리스트의 "RSI 시그널(과매수/과매도, 다이버전스)"과 "상위 타임프레임 추세" 판단용
+indicator("TradeGate RSI", shorttitle = "TG RSI", overlay = false, max_labels_count = 500, max_lines_count = 500)
+
+// ───────────── 입력 ─────────────
+grpR = "RSI"
+src    = input.source(close, "소스", group = grpR)
+len    = input.int(14, "RSI 기간", minval = 2, group = grpR)
+obLvl  = input.int(70, "과매수 기준", minval = 50, maxval = 100, group = grpR)
+osLvl  = input.int(30, "과매도 기준", minval = 0, maxval = 50, group = grpR)
+showMA = input.bool(true, "RSI 이동평균 표시", group = grpR, tooltip = "RSI가 이동평균 위면 상승 모멘텀, 아래면 하락 모멘텀")
+maType = input.string("EMA", "이동평균 종류", options = ["SMA", "EMA", "WMA"], group = grpR)
+maLen  = input.int(9, "이동평균 기간", minval = 1, group = grpR)
+
+grpD = "다이버전스"
+showReg   = input.bool(true, "일반 다이버전스 (반전 신호)", group = grpD, tooltip = "강세: 가격은 저점을 낮추는데 RSI는 저점을 높임\n약세: 가격은 고점을 높이는데 RSI는 고점을 낮춤")
+showHid   = input.bool(false, "히든 다이버전스 (추세 지속 신호)", group = grpD, tooltip = "강세: 가격은 저점을 높이는데 RSI는 저점을 낮춤 (상승 추세 눌림목)\n약세: 가격은 고점을 낮추는데 RSI는 고점을 높임 (하락 추세 반등)")
+lbL       = input.int(5, "피벗 왼쪽 봉 수", minval = 1, group = grpD)
+lbR       = input.int(5, "피벗 오른쪽 봉 수", minval = 1, group = grpD, tooltip = "이 봉 수만큼 지나야 다이버전스가 확정됩니다. 작을수록 빠르지만 신호가 많아집니다.")
+rangeMin  = input.int(5, "두 피벗 사이 최소 봉", minval = 1, group = grpD)
+rangeMax  = input.int(60, "두 피벗 사이 최대 봉", minval = 5, group = grpD)
+zoneOnly  = input.bool(false, "과매수/과매도 근처 다이버전스만", group = grpD, tooltip = "강세는 두 저점 중 하나의 RSI가 과매도+5 이하, 약세는 두 고점 중 하나가 과매수-5 이상일 때만 표시")
+onPrice   = input.bool(true, "가격 차트에도 다이버전스 선 표시", group = grpD)
+
+grpM = "상위 타임프레임"
+showHtf = input.bool(true, "상위 TF RSI 표시", group = grpM, tooltip = "확정된 상위 봉 값만 사용합니다 (리페인트 없음). 현재 차트보다 큰 타임프레임을 고르세요.")
+htf     = input.timeframe("240", "상위 타임프레임", group = grpM)
+
+grpT = "표시"
+showBg    = input.bool(true, "과매수/과매도 배경색", group = grpT)
+showCross = input.bool(false, "과매도 탈출 / 과매수 이탈 점", group = grpT)
+showTable = input.bool(true, "정보 패널", group = grpT)
+
+// ───────────── 색상 ─────────────
+cBull  = #26d39a
+cBear  = #ff4d6d
+cLine  = #c3cbe6
+cMa    = #ffd166
+cHtf   = #4da6ff
+cMuted = #7a83a6
+
+// ───────────── 계산 ─────────────
+rsi = ta.rsi(src, len)
+
+maSma = ta.sma(rsi, maLen)
+maEma = ta.ema(rsi, maLen)
+maWma = ta.wma(rsi, maLen)
+rsiMa = maType == "SMA" ? maSma : maType == "WMA" ? maWma : maEma
+
+// 상위 TF: 직전에 확정된 봉의 RSI (lookahead_on + [1] = 리페인트 없음)
+htfRsi = request.security(syminfo.tickerid, htf, ta.rsi(src, len)[1], lookahead = barmerge.lookahead_on)
+
+// ───────────── 그리기: RSI ─────────────
+rsiColor = rsi >= obLvl ? cBear : rsi <= osLvl ? cBull : cLine
+
+hOb  = hline(obLvl, "과매수", color.new(cBear, 40), hline.style_dashed)
+hMid = hline(50, "중심선", color.new(cMuted, 50), hline.style_dotted)
+hOs  = hline(osLvl, "과매도", color.new(cBull, 40), hline.style_dashed)
+fill(hOb, hOs, color.new(#7b8cff, 95), "RSI 범위")
+
+plot(showHtf ? htfRsi : na, "상위 TF RSI", color.new(cHtf, 25), 1, plot.style_stepline)
+plot(showMA ? rsiMa : na, "RSI 이동평균", color.new(cMa, 10), 1)
+plot(rsi, "RSI", rsiColor, 2)
+
+bgcolor(showBg and rsi >= obLvl ? color.new(cBear, 88) : showBg and rsi <= osLvl ? color.new(cBull, 88) : na, title = "과매수/과매도 배경")
+
+crossUpOs   = ta.crossover(rsi, osLvl)
+crossDownOb = ta.crossunder(rsi, obLvl)
+plotshape(showCross and crossUpOs ? osLvl : na, "과매도 탈출", shape.circle, location.absolute, cBull, size = size.tiny)
+plotshape(showCross and crossDownOb ? obLvl : na, "과매수 이탈", shape.circle, location.absolute, cBear, size = size.tiny)
+
+// ───────────── 다이버전스 ─────────────
+// 모든 ta.* 호출은 매 봉 실행되도록 조건식 밖에서 계산
+plFound = not na(ta.pivotlow(rsi, lbL, lbR))
+phFound = not na(ta.pivothigh(rsi, lbL, lbR))
+
+inRange(bool cond) =>
+    bars = ta.barssince(cond)
+    rangeMin <= bars and bars <= rangeMax
+
+plInRange = inRange(plFound[1])
+phInRange = inRange(phFound[1])
+
+prevRsiPL  = ta.valuewhen(plFound, rsi[lbR], 1)
+prevLowPL  = ta.valuewhen(plFound, low[lbR], 1)
+prevBarPL  = ta.valuewhen(plFound, bar_index[lbR], 1)
+prevRsiPH  = ta.valuewhen(phFound, rsi[lbR], 1)
+prevHighPH = ta.valuewhen(phFound, high[lbR], 1)
+prevBarPH  = ta.valuewhen(phFound, bar_index[lbR], 1)
+
+curRsi  = rsi[lbR]
+curLow  = low[lbR]
+curHigh = high[lbR]
+pivBar  = bar_index - lbR
+
+zoneBull = not zoneOnly or math.min(curRsi, prevRsiPL) <= osLvl + 5
+zoneBear = not zoneOnly or math.max(curRsi, prevRsiPH) >= obLvl - 5
+
+bullReg = showReg and plFound and plInRange and curRsi > prevRsiPL and curLow < prevLowPL and zoneBull
+bullHid = showHid and plFound and plInRange and curRsi < prevRsiPL and curLow > prevLowPL
+bearReg = showReg and phFound and phInRange and curRsi < prevRsiPH and curHigh > prevHighPH and zoneBear
+bearHid = showHid and phFound and phInRange and curRsi > prevRsiPH and curHigh < prevHighPH
+
+drawDiv(int x1, float r1, float p1, int x2, float r2, float p2, color col, bool hidden, string txt, bool isBull) =>
+    st = hidden ? line.style_dashed : line.style_solid
+    line.new(x1, r1, x2, r2, color = col, style = st, width = 2)
+    label.new(x2, r2, txt, color = color.new(col, 15), textcolor = color.white, size = size.tiny, style = isBull ? label.style_label_up : label.style_label_down)
+    if onPrice
+        line.new(x1, p1, x2, p2, color = col, style = st, width = 2, force_overlay = true)
+        label.new(x2, p2, txt, color = color.new(col, 15), textcolor = color.white, size = size.tiny, style = isBull ? label.style_label_up : label.style_label_down, yloc = isBull ? yloc.belowbar : yloc.abovebar, force_overlay = true)
+
+var string lastDiv    = "없음"
+var int    lastDivBar = na
+
+if bullReg
+    drawDiv(prevBarPL, prevRsiPL, prevLowPL, pivBar, curRsi, curLow, cBull, false, "강세", true)
+    lastDiv    := "강세 다이버전스"
+    lastDivBar := pivBar
+if bullHid
+    drawDiv(prevBarPL, prevRsiPL, prevLowPL, pivBar, curRsi, curLow, color.new(cBull, 30), true, "H 강세", true)
+    lastDiv    := "히든 강세"
+    lastDivBar := pivBar
+if bearReg
+    drawDiv(prevBarPH, prevRsiPH, prevHighPH, pivBar, curRsi, curHigh, cBear, false, "약세", false)
+    lastDiv    := "약세 다이버전스"
+    lastDivBar := pivBar
+if bearHid
+    drawDiv(prevBarPH, prevRsiPH, prevHighPH, pivBar, curRsi, curHigh, color.new(cBear, 30), true, "H 약세", false)
+    lastDiv    := "히든 약세"
+    lastDivBar := pivBar
+
+// ───────────── 정보 패널 ─────────────
+stateOf(float v) =>
+    na(v) ? "-" : v >= obLvl ? "과매수" : v <= osLvl ? "과매도" : v >= 50 ? "강세 영역" : "약세 영역"
+colorOf(float v) =>
+    na(v) ? cMuted : v >= obLvl ? cBear : v <= osLvl ? cBull : v >= 50 ? cBull : cBear
+
+var table panel = table.new(position.top_right, 2, 4, bgcolor = color.new(#0e1120, 8), frame_color = color.new(#2a2f45, 0), frame_width = 1, border_color = color.new(#2a2f45, 0), border_width = 1)
+
+if showTable and barstate.islast
+    momUp = rsi > rsiMa
+    table.cell(panel, 0, 0, "RSI " + str.tostring(len), text_color = cMuted, text_size = size.small, text_halign = text.align_left)
+    table.cell(panel, 1, 0, str.tostring(rsi, "#.0") + "  " + stateOf(rsi), text_color = colorOf(rsi), text_size = size.small, text_halign = text.align_left)
+    table.cell(panel, 0, 1, "상위 TF " + htf, text_color = cMuted, text_size = size.small, text_halign = text.align_left)
+    table.cell(panel, 1, 1, na(htfRsi) ? "-" : str.tostring(htfRsi, "#.0") + "  " + stateOf(htfRsi), text_color = colorOf(htfRsi), text_size = size.small, text_halign = text.align_left)
+    table.cell(panel, 0, 2, "모멘텀", text_color = cMuted, text_size = size.small, text_halign = text.align_left)
+    table.cell(panel, 1, 2, momUp ? "상승 (RSI > 평균)" : "하락 (RSI < 평균)", text_color = momUp ? cBull : cBear, text_size = size.small, text_halign = text.align_left)
+    table.cell(panel, 0, 3, "다이버전스", text_color = cMuted, text_size = size.small, text_halign = text.align_left)
+    table.cell(panel, 1, 3, na(lastDivBar) ? lastDiv : lastDiv + " · " + str.tostring(bar_index - lastDivBar) + "봉 전", text_color = cLine, text_size = size.small, text_halign = text.align_left)
+
+// ───────────── 알림 ─────────────
+alertcondition(bullReg, "강세 다이버전스", "TG RSI: 강세 다이버전스 확정 — {{ticker}} {{interval}}")
+alertcondition(bearReg, "약세 다이버전스", "TG RSI: 약세 다이버전스 확정 — {{ticker}} {{interval}}")
+alertcondition(bullHid, "히든 강세 다이버전스", "TG RSI: 히든 강세 다이버전스 — {{ticker}} {{interval}}")
+alertcondition(bearHid, "히든 약세 다이버전스", "TG RSI: 히든 약세 다이버전스 — {{ticker}} {{interval}}")
+alertcondition(crossUpOs, "과매도 탈출", "TG RSI: 과매도 탈출 (RSI가 과매도 기준 상향 돌파) — {{ticker}} {{interval}}")
+alertcondition(crossDownOb, "과매수 이탈", "TG RSI: 과매수 이탈 (RSI가 과매수 기준 하향 돌파) — {{ticker}} {{interval}}")
