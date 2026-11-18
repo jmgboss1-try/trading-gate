@@ -14,13 +14,13 @@ maType = input.string("EMA", "이동평균 종류", options = ["SMA", "EMA", "WM
 maLen  = input.int(9, "이동평균 기간", minval = 1, group = grpR)
 
 grpD = "다이버전스"
-showReg   = input.bool(true, "일반 다이버전스 (반전 신호)", group = grpD, tooltip = "강세: 가격은 저점을 낮추는데 RSI는 저점을 높임\n약세: 가격은 고점을 높이는데 RSI는 고점을 낮춤")
-showHid   = input.bool(false, "히든 다이버전스 (추세 지속 신호)", group = grpD, tooltip = "강세: 가격은 저점을 높이는데 RSI는 저점을 낮춤 (상승 추세 눌림목)\n약세: 가격은 고점을 낮추는데 RSI는 고점을 높임 (하락 추세 반등)")
+showReg   = input.bool(true, "상승/하락 다이버전스 (반전 신호)", group = grpD, tooltip = "상승 다이버전스: 가격은 저점을 낮추는데 RSI는 저점을 높임 → 반등 가능성\n하락 다이버전스: 가격은 고점을 높이는데 RSI는 고점을 낮춤 → 하락 가능성")
+showHid   = input.bool(false, "H 다이버전스 (추세 지속 신호)", group = grpD, tooltip = "H 상승: 상승 추세에서 가격은 저점을 높이는데 RSI는 저점을 낮춤 → 눌림목 후 상승 지속\nH 하락: 하락 추세에서 가격은 고점을 낮추는데 RSI는 고점을 높임 → 반등 후 하락 지속")
 lbL       = input.int(5, "피벗 왼쪽 봉 수", minval = 1, group = grpD)
 lbR       = input.int(5, "피벗 오른쪽 봉 수", minval = 1, group = grpD, tooltip = "이 봉 수만큼 지나야 다이버전스가 확정됩니다. 작을수록 빠르지만 신호가 많아집니다.")
 rangeMin  = input.int(5, "두 피벗 사이 최소 봉", minval = 1, group = grpD)
 rangeMax  = input.int(60, "두 피벗 사이 최대 봉", minval = 5, group = grpD)
-zoneOnly  = input.bool(false, "과매수/과매도 근처 다이버전스만", group = grpD, tooltip = "강세는 두 저점 중 하나의 RSI가 과매도+5 이하, 약세는 두 고점 중 하나가 과매수-5 이상일 때만 표시")
+zoneOnly  = input.bool(false, "과매수/과매도 근처 다이버전스만", group = grpD, tooltip = "상승은 두 저점 중 하나의 RSI가 과매도+5 이하, 하락은 두 고점 중 하나가 과매수-5 이상일 때만 표시")
 onPrice   = input.bool(true, "가격 차트에도 다이버전스 선 표시", group = grpD)
 
 grpM = "상위 타임프레임"
@@ -114,25 +114,25 @@ var string lastDiv    = "없음"
 var int    lastDivBar = na
 
 if bullReg
-    drawDiv(prevBarPL, prevRsiPL, prevLowPL, pivBar, curRsi, curLow, cBull, false, "강세", true)
-    lastDiv    := "강세 다이버전스"
+    drawDiv(prevBarPL, prevRsiPL, prevLowPL, pivBar, curRsi, curLow, cBull, false, "상승 다이버전스", true)
+    lastDiv    := "상승 다이버전스"
     lastDivBar := pivBar
 if bullHid
-    drawDiv(prevBarPL, prevRsiPL, prevLowPL, pivBar, curRsi, curLow, color.new(cBull, 30), true, "H 강세", true)
-    lastDiv    := "히든 강세"
+    drawDiv(prevBarPL, prevRsiPL, prevLowPL, pivBar, curRsi, curLow, color.new(cBull, 30), true, "H 상승 다이버전스", true)
+    lastDiv    := "H 상승 다이버전스"
     lastDivBar := pivBar
 if bearReg
-    drawDiv(prevBarPH, prevRsiPH, prevHighPH, pivBar, curRsi, curHigh, cBear, false, "약세", false)
-    lastDiv    := "약세 다이버전스"
+    drawDiv(prevBarPH, prevRsiPH, prevHighPH, pivBar, curRsi, curHigh, cBear, false, "하락 다이버전스", false)
+    lastDiv    := "하락 다이버전스"
     lastDivBar := pivBar
 if bearHid
-    drawDiv(prevBarPH, prevRsiPH, prevHighPH, pivBar, curRsi, curHigh, color.new(cBear, 30), true, "H 약세", false)
-    lastDiv    := "히든 약세"
+    drawDiv(prevBarPH, prevRsiPH, prevHighPH, pivBar, curRsi, curHigh, color.new(cBear, 30), true, "H 하락 다이버전스", false)
+    lastDiv    := "H 하락 다이버전스"
     lastDivBar := pivBar
 
 // ───────────── 정보 패널 ─────────────
 stateOf(float v) =>
-    na(v) ? "-" : v >= obLvl ? "과매수" : v <= osLvl ? "과매도" : v >= 50 ? "강세 영역" : "약세 영역"
+    na(v) ? "-" : v >= obLvl ? "과매수" : v <= osLvl ? "과매도" : v >= 50 ? "상승 우위" : "하락 우위"
 colorOf(float v) =>
     na(v) ? cMuted : v >= obLvl ? cBear : v <= osLvl ? cBull : v >= 50 ? cBull : cBear
 
@@ -150,9 +150,9 @@ if showTable and barstate.islast
     table.cell(panel, 1, 3, na(lastDivBar) ? lastDiv : lastDiv + " · " + str.tostring(bar_index - lastDivBar) + "봉 전", text_color = cLine, text_size = size.small, text_halign = text.align_left)
 
 // ───────────── 알림 ─────────────
-alertcondition(bullReg, "강세 다이버전스", "TG RSI: 강세 다이버전스 확정 — {{ticker}} {{interval}}")
-alertcondition(bearReg, "약세 다이버전스", "TG RSI: 약세 다이버전스 확정 — {{ticker}} {{interval}}")
-alertcondition(bullHid, "히든 강세 다이버전스", "TG RSI: 히든 강세 다이버전스 — {{ticker}} {{interval}}")
-alertcondition(bearHid, "히든 약세 다이버전스", "TG RSI: 히든 약세 다이버전스 — {{ticker}} {{interval}}")
+alertcondition(bullReg, "상승 다이버전스", "TG RSI: 상승 다이버전스 확정 (반등 가능성) — {{ticker}} {{interval}}")
+alertcondition(bearReg, "하락 다이버전스", "TG RSI: 하락 다이버전스 확정 (하락 가능성) — {{ticker}} {{interval}}")
+alertcondition(bullHid, "H 상승 다이버전스", "TG RSI: H 상승 다이버전스 (상승 추세 지속 가능성) — {{ticker}} {{interval}}")
+alertcondition(bearHid, "H 하락 다이버전스", "TG RSI: H 하락 다이버전스 (하락 추세 지속 가능성) — {{ticker}} {{interval}}")
 alertcondition(crossUpOs, "과매도 탈출", "TG RSI: 과매도 탈출 (RSI가 과매도 기준 상향 돌파) — {{ticker}} {{interval}}")
 alertcondition(crossDownOb, "과매수 이탈", "TG RSI: 과매수 이탈 (RSI가 과매수 기준 하향 돌파) — {{ticker}} {{interval}}")
