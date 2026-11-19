@@ -1,6 +1,7 @@
 //@version=6
 // TradeGate RSI 다이버전스 — 평소 쓰는 기본 RSI 창 위에 다이버전스만 겹쳐 표시
-// 사용법: 차트에 추가 → 지표 이름 옆 ⋯ → "창 이동" → RSI가 있는 창으로 이동
+// 사용법: 차트에 추가 → 지표 이름 옆 ⋯ → "창 이동" → "위로"를 RSI 창에 들어갈 때까지 반복
+// 주의: 가격(캔들) 창에 두면 RSI 값(0~100) 높이에 그려져 가격 눈금이 깨집니다. 반드시 RSI 창 안에 두세요.
 // RSI 기간·소스를 평소 RSI와 같게 맞추면 선이 RSI 선과 정확히 겹칩니다.
 indicator("TradeGate RSI 다이버전스", shorttitle = "TG 다이버전스", overlay = false, max_labels_count = 500, max_lines_count = 500, max_bars_back = 500)
 
