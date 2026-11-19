@@ -26,11 +26,13 @@ rangeMax = input.int(60, "두 저점 사이 최대 봉", minval = 5, maxval = 20
 
 grpS = "표시"
 where     = input.string("RSI 창", "표시 위치", options = ["RSI 창", "가격 차트", "둘 다"], group = grpS, tooltip = "RSI 창: 기본 RSI 창으로 옮겨서 RSI 선 위에 겹쳐 보기\n가격 차트: 캔들 위에 표시")
-showLabel = input.bool(true, "라벨 표시", group = grpS)
+labelMode = input.string("짧게", "라벨 글자", options = ["짧게", "전체", "숨김"], group = grpS, tooltip = "짧게: 상승 / 하락 / H 상승 / H 하락\n전체: 상승 다이버전스 / 하락 다이버전스 …\n숨김: 선만 표시")
+labelSize = input.string("아주 작게", "라벨 크기", options = ["아주 작게", "작게"], group = grpS)
 cBull     = input.color(#26d39a, "상승 색", group = grpS, inline = "col")
 cBear     = input.color(#ff4d6d, "하락 색", group = grpS, inline = "col")
 lineW     = input.int(2, "선 두께", minval = 1, maxval = 4, group = grpS)
 
+lblSize   = labelSize == "작게" ? size.small : size.tiny
 onRsiPane = where != "가격 차트"
 onPrice   = where != "RSI 창"
 
@@ -132,14 +134,15 @@ bearHid = showHid and bearBase and bearClean and curHigh < prevHighPH and rsiHig
 drawDiv(int xp1, float p1, int xr1, float r1, int xp2, float p2, int xr2, float r2, color col, bool hidden, string txt, bool isBull) =>
     st = hidden ? line.style_dashed : line.style_solid
     lblStyle = isBull ? label.style_label_up : label.style_label_down
+    lblTxt   = labelMode == "짧게" ? str.replace(txt, " 다이버전스", "") : txt
     if onRsiPane
         line.new(xr1, r1, xr2, r2, color = col, style = st, width = lineW)
-        if showLabel
-            label.new(xr2, r2, txt, color = color.new(col, 15), textcolor = color.white, size = size.tiny, style = lblStyle)
+        if labelMode != "숨김"
+            label.new(xr2, r2, lblTxt, color = color.new(col, 45), textcolor = color.white, size = lblSize, style = lblStyle)
     if onPrice
         line.new(xp1, p1, xp2, p2, color = col, style = st, width = lineW, force_overlay = true)
-        if showLabel
-            label.new(xp2, p2, txt, color = color.new(col, 15), textcolor = color.white, size = size.small, style = lblStyle, yloc = isBull ? yloc.belowbar : yloc.abovebar, force_overlay = true)
+        if labelMode != "숨김"
+            label.new(xp2, p2, lblTxt, color = color.new(col, 45), textcolor = color.white, size = lblSize, style = lblStyle, yloc = isBull ? yloc.belowbar : yloc.abovebar, force_overlay = true)
 
 if bullReg
     drawDiv(int(prevBarPL), prevLowPL, int(prevRBarPL), prevRsiPL, pivBar, curLow, rsiLowBar, rsiLowNear, cBull, false, "상승 다이버전스", true)

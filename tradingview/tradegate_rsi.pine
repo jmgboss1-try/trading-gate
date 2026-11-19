@@ -75,8 +75,10 @@ plotshape(showCross and crossDownOb ? obLvl : na, "과매수 이탈", shape.circ
 
 // 이 지표는 RSI 창 자체 → RSI 창에는 항상, 가격 차트는 설정에 따라
 onRsiPane = true
-showLabel = true
+labelMode = input.string("짧게", "라벨 글자", options = ["짧게", "전체", "숨김"], group = grpD, tooltip = "짧게: 상승 / 하락 / H 상승 / H 하락\n전체: 상승 다이버전스 / 하락 다이버전스 …\n숨김: 선만 표시")
+labelSize = input.string("아주 작게", "라벨 크기", options = ["아주 작게", "작게"], group = grpD)
 lineW     = 2
+lblSize   = labelSize == "작게" ? size.small : size.tiny
 
 // ───────────── 다이버전스 ─────────────
 // 1) 저점·고점은 '가격'(심지 포함)에서 찾는다
@@ -171,14 +173,15 @@ bearHid = showHid and bearBase and bearClean and curHigh < prevHighPH and rsiHig
 drawDiv(int xp1, float p1, int xr1, float r1, int xp2, float p2, int xr2, float r2, color col, bool hidden, string txt, bool isBull) =>
     st = hidden ? line.style_dashed : line.style_solid
     lblStyle = isBull ? label.style_label_up : label.style_label_down
+    lblTxt   = labelMode == "짧게" ? str.replace(txt, " 다이버전스", "") : txt
     if onRsiPane
         line.new(xr1, r1, xr2, r2, color = col, style = st, width = lineW)
-        if showLabel
-            label.new(xr2, r2, txt, color = color.new(col, 15), textcolor = color.white, size = size.tiny, style = lblStyle)
+        if labelMode != "숨김"
+            label.new(xr2, r2, lblTxt, color = color.new(col, 45), textcolor = color.white, size = lblSize, style = lblStyle)
     if onPrice
         line.new(xp1, p1, xp2, p2, color = col, style = st, width = lineW, force_overlay = true)
-        if showLabel
-            label.new(xp2, p2, txt, color = color.new(col, 15), textcolor = color.white, size = size.small, style = lblStyle, yloc = isBull ? yloc.belowbar : yloc.abovebar, force_overlay = true)
+        if labelMode != "숨김"
+            label.new(xp2, p2, lblTxt, color = color.new(col, 45), textcolor = color.white, size = lblSize, style = lblStyle, yloc = isBull ? yloc.belowbar : yloc.abovebar, force_overlay = true)
 
 var string lastDiv    = "없음"
 var int    lastDivBar = na
