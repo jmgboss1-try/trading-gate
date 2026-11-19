@@ -1,9 +1,8 @@
 //@version=6
-// TradeGate RSI 다이버전스 — 평소 쓰는 기본 RSI 창 위에 다이버전스만 겹쳐 표시
-// 사용법: 차트에 추가 → 지표 이름 옆 ⋯ → "창 이동" → "위로"를 RSI 창에 들어갈 때까지 반복
-// 주의: 가격(캔들) 창에 두면 RSI 값(0~100) 높이에 그려져 가격 눈금이 깨집니다. 반드시 RSI 창 안에 두세요.
-// RSI 기간·소스를 평소 RSI와 같게 맞추면 선이 RSI 선과 정확히 겹칩니다.
-indicator("TradeGate RSI 다이버전스", shorttitle = "TG 다이버전스", overlay = false, max_labels_count = 500, max_lines_count = 500, max_bars_back = 500)
+// TradeGate RSI 다이버전스 — 가격 차트(캔들) 위에 RSI 다이버전스만 표시
+// 차트에 추가하면 바로 캔들 위에 그려집니다. 창을 옮길 필요 없음.
+// RSI 기간·소스·과매수/과매도 기준을 평소 RSI와 같게 맞추세요.
+indicator("TradeGate RSI 다이버전스", shorttitle = "TG 다이버전스", overlay = true, max_labels_count = 500, max_lines_count = 500, max_bars_back = 500)
 
 // ───────────── 입력 ─────────────
 grpR = "RSI (평소 RSI와 같게)"
@@ -25,7 +24,6 @@ rangeMin = input.int(5, "두 저점 사이 최소 봉", minval = 2, group = grpD
 rangeMax = input.int(60, "두 저점 사이 최대 봉", minval = 5, maxval = 200, group = grpD)
 
 grpS = "표시"
-where     = input.string("RSI 창", "표시 위치", options = ["RSI 창", "가격 차트", "둘 다"], group = grpS, tooltip = "RSI 창: 기본 RSI 창으로 옮겨서 RSI 선 위에 겹쳐 보기\n가격 차트: 캔들 위에 표시")
 labelMode = input.string("짧게", "라벨 글자", options = ["짧게", "전체", "숨김"], group = grpS, tooltip = "짧게: 상승 / 하락 / H 상승 / H 하락\n전체: 상승 다이버전스 / 하락 다이버전스 …\n숨김: 선만 표시")
 labelSize = input.string("아주 작게", "라벨 크기", options = ["아주 작게", "작게"], group = grpS)
 cBull     = input.color(#26d39a, "상승 색", group = grpS, inline = "col")
@@ -33,13 +31,11 @@ cBear     = input.color(#ff4d6d, "하락 색", group = grpS, inline = "col")
 lineW     = input.int(2, "선 두께", minval = 1, maxval = 4, group = grpS)
 
 lblSize   = labelSize == "작게" ? size.small : size.tiny
-onRsiPane = where != "가격 차트"
-onPrice   = where != "RSI 창"
+onRsiPane = false // 가격 차트 전용
+onPrice   = true
 
 // ───────────── RSI ─────────────
 rsi = ta.rsi(src, len)
-// RSI 창과 눈금을 맞추기 위한 보이지 않는 RSI (선은 그리지 않음)
-plot(rsi, "RSI (눈금 맞춤용)", color = color.new(color.gray, 100), display = display.none)
 
 // ───────────── 다이버전스 ─────────────
 // 1) 저점·고점은 '가격'(심지 포함)에서 찾는다

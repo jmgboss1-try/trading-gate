@@ -9,7 +9,7 @@ src    = input.source(close, "소스", group = grpR)
 len    = input.int(14, "RSI 기간", minval = 2, group = grpR)
 obLvl  = input.int(70, "과매수 기준", minval = 50, maxval = 100, group = grpR)
 osLvl  = input.int(30, "과매도 기준", minval = 0, maxval = 50, group = grpR)
-showMA = input.bool(true, "RSI 이동평균 표시", group = grpR, tooltip = "RSI가 이동평균 위면 상승 모멘텀, 아래면 하락 모멘텀")
+showMA = input.bool(false, "RSI 이동평균 표시", group = grpR, tooltip = "RSI가 이동평균 위면 상승 모멘텀, 아래면 하락 모멘텀")
 maType = input.string("EMA", "이동평균 종류", options = ["SMA", "EMA", "WMA"], group = grpR)
 maLen  = input.int(9, "이동평균 기간", minval = 1, group = grpR)
 
@@ -24,16 +24,16 @@ needZone  = input.bool(true, "과매도/과매수 터치 필수", group = grpD, 
 showBull  = input.bool(true, "상승 쪽 표시", group = grpD, inline = "side")
 showBear  = input.bool(true, "하락 쪽 표시", group = grpD, inline = "side")
 tol       = input.int(2, "RSI 저점 찾기 허용 봉", minval = 0, maxval = 5, group = grpD, tooltip = "가격 저점 앞뒤 이 봉 수 안에서 RSI 최저(최고)값을 찾습니다")
-onPrice   = input.bool(true, "가격 차트에도 다이버전스 선 표시", group = grpD)
+onPrice   = input.bool(false, "가격 차트에도 다이버전스 선 표시", group = grpD)
 
 grpM = "상위 타임프레임"
-showHtf = input.bool(true, "상위 TF RSI 표시", group = grpM, tooltip = "확정된 상위 봉 값만 사용합니다 (리페인트 없음). 현재 차트보다 큰 타임프레임을 고르세요.")
+showHtf = input.bool(false, "상위 TF RSI 표시", group = grpM, tooltip = "확정된 상위 봉 값만 사용합니다 (리페인트 없음). 현재 차트보다 큰 타임프레임을 고르세요.")
 htf     = input.timeframe("240", "상위 타임프레임", group = grpM)
 
 grpT = "표시"
-showBg    = input.bool(true, "과매수/과매도 배경색", group = grpT)
+showBg    = input.bool(false, "과매수/과매도 배경색", group = grpT)
 showCross = input.bool(false, "과매도 탈출 / 과매수 이탈 점", group = grpT)
-showTable = input.bool(true, "정보 패널", group = grpT)
+showTable = input.bool(false, "정보 패널", group = grpT)
 
 // ───────────── 색상 ─────────────
 cBull  = #26d39a
@@ -54,17 +54,21 @@ rsiMa = maType == "SMA" ? maSma : maType == "WMA" ? maWma : maEma
 // 상위 TF: 직전에 확정된 봉의 RSI (lookahead_on + [1] = 리페인트 없음)
 htfRsi = request.security(syminfo.tickerid, htf, ta.rsi(src, len)[1], lookahead = barmerge.lookahead_on)
 
-// ───────────── 그리기: RSI ─────────────
-rsiColor = rsi >= obLvl ? cBear : rsi <= osLvl ? cBull : cLine
+// ───────────── 그리기: RSI (TradingView 기본 RSI와 같은 모양) ─────────────
+cRsi  = #7E57C2
+cBand = #787B86
 
-hOb  = hline(obLvl, "과매수", color.new(cBear, 40), hline.style_dashed)
-hMid = hline(50, "중심선", color.new(cMuted, 50), hline.style_dotted)
-hOs  = hline(osLvl, "과매도", color.new(cBull, 40), hline.style_dashed)
-fill(hOb, hOs, color.new(#7b8cff, 95), "RSI 범위")
+rsiPlot = plot(rsi, "RSI", cRsi)
+hOb  = hline(obLvl, "과매수", cBand)
+hMid = hline(50, "중심선", color.new(cBand, 50))
+hOs  = hline(osLvl, "과매도", cBand)
+fill(hOb, hOs, color.rgb(126, 87, 194, 90), "RSI 배경")
+midPlot = plot(50, "중심 (채우기용)", color = na, editable = false, display = display.none)
+fill(rsiPlot, midPlot, 100, obLvl, top_color = color.new(color.green, 0), bottom_color = color.new(color.green, 100), title = "과매수 그라데이션")
+fill(rsiPlot, midPlot, osLvl, 0, top_color = color.new(color.red, 100), bottom_color = color.new(color.red, 0), title = "과매도 그라데이션")
 
 plot(showHtf ? htfRsi : na, "상위 TF RSI", color.new(cHtf, 25), 1, plot.style_stepline)
 plot(showMA ? rsiMa : na, "RSI 이동평균", color.new(cMa, 10), 1)
-plot(rsi, "RSI", rsiColor, 2)
 
 bgcolor(showBg and rsi >= obLvl ? color.new(cBear, 88) : showBg and rsi <= osLvl ? color.new(cBull, 88) : na, title = "과매수/과매도 배경")
 
