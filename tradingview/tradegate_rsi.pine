@@ -93,7 +93,7 @@ lblSize   = labelSize == "작게" ? size.small : size.tiny
 // 1) 저점·고점은 '가격'(심지 포함)에서 찾는다
 // 2) 그 시점 ±tol봉 안의 RSI 최저·최고값과 비교한다
 // 3) 두 점을 잇는 선을 사이 봉의 가격·RSI가 뚫으면 무효
-// 4) 일반 다이버전스는 그 구간에서 RSI가 과매도/과매수를 찍어야 인정 (설정)
+// 4) 일반 다이버전스는 첫 점이 과매도/과매수이고, 사이에 그 구간이 한 번 해소돼야 인정 (설정)
 // 모든 ta.* 호출은 매 봉 실행되도록 조건식 밖에서 계산
 plFound = not na(ta.pivotlow(low, lbL, lbR))
 phFound = not na(ta.pivothigh(high, lbL, lbR))
@@ -110,7 +110,6 @@ rsiHighBar   = winEnd + ta.highestbars(rsi, winLen)[winOff]
 pivBar  = bar_index - lbR
 curLow  = low[lbR]
 curHigh = high[lbR]
-
 
 RSI_SLACK = 1.0 // RSI 선 통과 허용 오차 (RSI 포인트)
 
