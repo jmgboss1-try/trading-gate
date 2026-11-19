@@ -15,7 +15,8 @@ maLen  = input.int(9, "이동평균 기간", minval = 1, group = grpR)
 
 grpD = "다이버전스"
 showReg   = input.bool(true, "상승/하락 다이버전스 (반전 신호)", group = grpD, tooltip = "상승 다이버전스: 가격은 저점을 낮추는데 RSI는 저점을 높임 → 반등 가능성\n하락 다이버전스: 가격은 고점을 높이는데 RSI는 고점을 낮춤 → 하락 가능성")
-showHid   = input.bool(false, "H 다이버전스 (추세 지속 신호)", group = grpD, tooltip = "H 상승: 상승 추세에서 가격은 저점을 높이는데 RSI는 저점을 낮춤 → 눌림목 후 상승 지속\nH 하락: 하락 추세에서 가격은 고점을 낮추는데 RSI는 고점을 높임 → 반등 후 하락 지속")
+showHid   = input.bool(false, "H 다이버전스 (추세 지속 신호)", group = grpD, tooltip = "H 상승: 가격은 저점을 높이는데 RSI는 저점을 낮춤 → 상승 추세 지속\nH 하락: 가격은 고점을 낮추는데 RSI는 고점을 높임 → 하락 추세 지속\n조건: 시작점 RSI가 50 ± 허용값 안, 완성점 RSI가 과매도(H 상승) 또는 과매수(H 하락) 도달")
+midTol    = input.float(4, "H 다이버전스 시작점: RSI 50 ± 허용", minval = 0, maxval = 15, step = 0.5, group = grpD, tooltip = "H 다이버전스 첫 번째 저점(고점)의 RSI가 50에서 이 값 이내여야 합니다. 예: 4 → 46~54")
 lbL       = input.int(5, "저점·고점 판단: 왼쪽 봉 수", minval = 1, group = grpD)
 lbR       = input.int(3, "저점·고점 판단: 오른쪽 봉 수", minval = 1, group = grpD, tooltip = "이 봉 수만큼 지나야 다이버전스가 확정됩니다. 작을수록 빠르지만 신호가 많아집니다.")
 rangeMin  = input.int(5, "두 저점 사이 최소 봉", minval = 2, group = grpD)
@@ -169,9 +170,89 @@ if bearBase
     bearMaxR  := m
 
 bullReg = showReg and bullBase and bullClean and curLow < prevLowPL and rsiLowNear > prevRsiPL and (not needZone or bullMinR <= osLvl)
-bullHid = showHid and bullBase and bullClean and curLow > prevLowPL and rsiLowNear < prevRsiPL
 bearReg = showReg and bearBase and bearClean and curHigh > prevHighPH and rsiHighNear < prevRsiPH and (not needZone or bearMaxR >= obLvl)
-bearHid = showHid and bearBase and bearClean and curHigh < prevHighPH and rsiHighNear > prevRsiPH
+
+// H 다이버전스: 시작점 RSI ≈ 50 (± midTol), 완성점 RSI가 과매도/과매수 도달
+// 시작점은 바로 앞 저점(고점)만이 아니라, 범위 안의 이전 저점(고점)들 중 조건을 만족하는 가장 가까운 것
+var array<int>   plBars  = array.new<int>()
+var array<float> plVals  = array.new<float>()
+var array<float> plRsis  = array.new<float>()
+var array<int>   plRBars = array.new<int>()
+var array<int>   phBars  = array.new<int>()
+var array<float> phVals  = array.new<float>()
+var array<float> phRsis  = array.new<float>()
+var array<int>   phRBars = array.new<int>()
+
+int   hbIdx = -1
+int   hbX   = na
+float hbP   = na
+int   hbXR  = na
+float hbR   = na
+if showHid and showBull and plFound and rsiLowNear <= osLvl and array.size(plBars) > 0
+    for k = array.size(plBars) - 1 to 0
+        x1  = array.get(plBars, k)
+        gap = pivBar - x1
+        if gap > rangeMax
+            break
+        p1 = array.get(plVals, k)
+        r1 = array.get(plRsis, k)
+        if gap >= rangeMin and curLow > p1 and math.abs(r1 - 50) <= midTol
+            [c, m] = checkLows(x1, p1, r1, pivBar, curLow, rsiLowNear)
+            if c
+                hbIdx := k
+                hbX   := x1
+                hbP   := p1
+                hbXR  := array.get(plRBars, k)
+                hbR   := r1
+                break
+
+int   hsIdx = -1
+int   hsX   = na
+float hsP   = na
+int   hsXR  = na
+float hsR   = na
+if showHid and showBear and phFound and rsiHighNear >= obLvl and array.size(phBars) > 0
+    for k = array.size(phBars) - 1 to 0
+        x1  = array.get(phBars, k)
+        gap = pivBar - x1
+        if gap > rangeMax
+            break
+        p1 = array.get(phVals, k)
+        r1 = array.get(phRsis, k)
+        if gap >= rangeMin and curHigh < p1 and math.abs(r1 - 50) <= midTol
+            [c, m] = checkHighs(x1, p1, r1, pivBar, curHigh, rsiHighNear)
+            if c
+                hsIdx := k
+                hsX   := x1
+                hsP   := p1
+                hsXR  := array.get(phRBars, k)
+                hsR   := r1
+                break
+
+bullHid = hbIdx >= 0
+bearHid = hsIdx >= 0
+
+// 이번 저점·고점을 기록 (최근 30개만 유지)
+if plFound
+    array.push(plBars, pivBar)
+    array.push(plVals, curLow)
+    array.push(plRsis, rsiLowNear)
+    array.push(plRBars, rsiLowBar)
+    if array.size(plBars) > 30
+        array.shift(plBars)
+        array.shift(plVals)
+        array.shift(plRsis)
+        array.shift(plRBars)
+if phFound
+    array.push(phBars, pivBar)
+    array.push(phVals, curHigh)
+    array.push(phRsis, rsiHighNear)
+    array.push(phRBars, rsiHighBar)
+    if array.size(phBars) > 30
+        array.shift(phBars)
+        array.shift(phVals)
+        array.shift(phRsis)
+        array.shift(phRBars)
 
 // 가격 선: 가격 저점/고점끼리 · RSI 선: RSI 저점/고점끼리 (봉 위치가 1~2개 다를 수 있음)
 drawDiv(int xp1, float p1, int xr1, float r1, int xp2, float p2, int xr2, float r2, color col, bool hidden, string txt, bool isBull) =>
@@ -195,7 +276,7 @@ if bullReg
     lastDiv    := "상승 다이버전스"
     lastDivBar := pivBar
 if bullHid
-    drawDiv(int(prevBarPL), prevLowPL, int(prevRBarPL), prevRsiPL, pivBar, curLow, rsiLowBar, rsiLowNear, color.new(cBull, 30), true, "H 상승 다이버전스", true)
+    drawDiv(hbX, hbP, hbXR, hbR, pivBar, curLow, rsiLowBar, rsiLowNear, color.new(cBull, 30), true, "H 상승 다이버전스", true)
     lastDiv    := "H 상승 다이버전스"
     lastDivBar := pivBar
 if bearReg
@@ -203,7 +284,7 @@ if bearReg
     lastDiv    := "하락 다이버전스"
     lastDivBar := pivBar
 if bearHid
-    drawDiv(int(prevBarPH), prevHighPH, int(prevRBarPH), prevRsiPH, pivBar, curHigh, rsiHighBar, rsiHighNear, color.new(cBear, 30), true, "H 하락 다이버전스", false)
+    drawDiv(hsX, hsP, hsXR, hsR, pivBar, curHigh, rsiHighBar, rsiHighNear, color.new(cBear, 30), true, "H 하락 다이버전스", false)
     lastDiv    := "H 하락 다이버전스"
     lastDivBar := pivBar
 
