@@ -29,7 +29,10 @@ labelMode = input.string("짧게", "라벨 글자", options = ["짧게", "전체
 labelSize = input.string("아주 작게", "라벨 크기", options = ["아주 작게", "작게"], group = grpS)
 cBull     = input.color(#26d39a, "상승 색", group = grpS, inline = "col")
 cBear     = input.color(#ff4d6d, "하락 색", group = grpS, inline = "col")
-lineW     = input.int(2, "선 두께", minval = 1, maxval = 4, group = grpS)
+lineW     = input.int(1, "선 두께", minval = 1, maxval = 4, group = grpS, inline = "ln")
+lineTr    = input.int(50, "선 투명도 %", minval = 0, maxval = 90, step = 10, group = grpS, inline = "ln", tooltip = "0 = 진하게, 90 = 거의 안 보임")
+lineStyIn = input.string("실선", "선 모양 (일반 다이버전스)", options = ["실선", "점선", "짧은 점선"], group = grpS, tooltip = "H 다이버전스는 항상 긴 점선으로 그려 일반 다이버전스와 구분합니다")
+regStyle  = lineStyIn == "점선" ? line.style_dashed : lineStyIn == "짧은 점선" ? line.style_dotted : line.style_solid
 
 lblSize   = labelSize == "작게" ? size.small : size.tiny
 onRsiPane = false // 가격 차트 전용
@@ -209,26 +212,27 @@ if phFound
 
 // 가격 선: 가격 저점/고점끼리 · RSI 선: RSI 저점/고점끼리 (봉 위치가 1~2개 다를 수 있음)
 drawDiv(int xp1, float p1, int xr1, float r1, int xp2, float p2, int xr2, float r2, color col, bool hidden, string txt, bool isBull) =>
-    st = hidden ? line.style_dashed : line.style_solid
+    st = hidden ? line.style_dashed : regStyle
+    lc = color.new(col, lineTr)
     lblStyle = isBull ? label.style_label_up : label.style_label_down
     lblTxt   = labelMode == "짧게" ? str.replace(txt, " 다이버전스", "") : txt
     if onRsiPane
-        line.new(xr1, r1, xr2, r2, color = col, style = st, width = lineW)
+        line.new(xr1, r1, xr2, r2, color = lc, style = st, width = lineW)
         if labelMode != "숨김"
             label.new(xr2, r2, lblTxt, color = color.new(col, 45), textcolor = color.white, size = lblSize, style = lblStyle)
     if onPrice
-        line.new(xp1, p1, xp2, p2, color = col, style = st, width = lineW, force_overlay = true)
+        line.new(xp1, p1, xp2, p2, color = lc, style = st, width = lineW, force_overlay = true)
         if labelMode != "숨김"
             label.new(xp2, p2, lblTxt, color = color.new(col, 45), textcolor = color.white, size = lblSize, style = lblStyle, yloc = isBull ? yloc.belowbar : yloc.abovebar, force_overlay = true)
 
 if bullReg
     drawDiv(int(prevBarPL), prevLowPL, int(prevRBarPL), prevRsiPL, pivBar, curLow, rsiLowBar, rsiLowNear, cBull, false, "상승 다이버전스", true)
 if bullHid
-    drawDiv(hbX, hbP, hbXR, hbR, pivBar, curLow, rsiLowBar, rsiLowNear, color.new(cBull, 30), true, "H 상승 다이버전스", true)
+    drawDiv(hbX, hbP, hbXR, hbR, pivBar, curLow, rsiLowBar, rsiLowNear, cBull, true, "H 상승 다이버전스", true)
 if bearReg
     drawDiv(int(prevBarPH), prevHighPH, int(prevRBarPH), prevRsiPH, pivBar, curHigh, rsiHighBar, rsiHighNear, cBear, false, "하락 다이버전스", false)
 if bearHid
-    drawDiv(hsX, hsP, hsXR, hsR, pivBar, curHigh, rsiHighBar, rsiHighNear, color.new(cBear, 30), true, "H 하락 다이버전스", false)
+    drawDiv(hsX, hsP, hsXR, hsR, pivBar, curHigh, rsiHighBar, rsiHighNear, cBear, true, "H 하락 다이버전스", false)
 
 // ───────────── 알림 ─────────────
 alertcondition(bullReg, "상승 다이버전스", "TG: 상승 다이버전스 확정 (반등 가능성) — {{ticker}} {{interval}}")
