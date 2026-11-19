@@ -1,0 +1,84 @@
+//@version=6
+// TradeGate RSI 다이버전스 — 가격 차트 위에 다이버전스만 표시
+// 평소 쓰는 RSI 지표는 그대로 두고, 이 지표로 다이버전스만 켜고 끕니다.
+// RSI 기간·소스를 평소 RSI와 같게 맞추세요.
+indicator("TradeGate RSI 다이버전스", shorttitle = "TG 다이버전스", overlay = true, max_labels_count = 500, max_lines_count = 500)
+
+// ───────────── 입력 ─────────────
+grpR = "RSI (평소 RSI와 같게)"
+src = input.source(close, "소스", group = grpR)
+len = input.int(14, "RSI 기간", minval = 2, group = grpR)
+
+grpD = "다이버전스"
+showReg  = input.bool(true, "상승/하락 다이버전스 (반전 신호)", group = grpD, tooltip = "상승 다이버전스: 가격은 저점을 낮추는데 RSI는 저점을 높임 → 반등 가능성\n하락 다이버전스: 가격은 고점을 높이는데 RSI는 고점을 낮춤 → 하락 가능성")
+showHid  = input.bool(false, "H 다이버전스 (추세 지속 신호)", group = grpD, tooltip = "H 상승: 상승 추세에서 가격은 저점을 높이는데 RSI는 저점을 낮춤 → 눌림목 후 상승 지속\nH 하락: 하락 추세에서 가격은 고점을 낮추는데 RSI는 고점을 높임 → 반등 후 하락 지속")
+showBull = input.bool(true, "상승 쪽 표시", group = grpD, inline = "side")
+showBear = input.bool(true, "하락 쪽 표시", group = grpD, inline = "side")
+lbL      = input.int(5, "피벗 왼쪽 봉 수", minval = 1, group = grpD)
+lbR      = input.int(5, "피벗 오른쪽 봉 수", minval = 1, group = grpD, tooltip = "이 봉 수만큼 지나야 다이버전스가 확정됩니다. 작을수록 빠르지만 신호가 많아집니다.")
+rangeMin = input.int(5, "두 피벗 사이 최소 봉", minval = 1, group = grpD)
+rangeMax = input.int(60, "두 피벗 사이 최대 봉", minval = 5, group = grpD)
+zoneOnly = input.bool(false, "과매수/과매도 근처만", group = grpD, tooltip = "상승은 두 저점 중 하나의 RSI가 과매도+5 이하, 하락은 두 고점 중 하나가 과매수-5 이상일 때만 표시")
+obLvl    = input.int(70, "과매수 기준", minval = 50, maxval = 100, group = grpD)
+osLvl    = input.int(30, "과매도 기준", minval = 0, maxval = 50, group = grpD)
+
+grpS = "표시"
+showLabel = input.bool(true, "라벨 표시", group = grpS)
+cBull     = input.color(#26d39a, "상승 색", group = grpS, inline = "col")
+cBear     = input.color(#ff4d6d, "하락 색", group = grpS, inline = "col")
+lineW     = input.int(2, "선 두께", minval = 1, maxval = 4, group = grpS)
+
+// ───────────── 계산 ─────────────
+// 모든 ta.* 호출은 매 봉 실행되도록 조건식 밖에서 계산
+rsi = ta.rsi(src, len)
+
+plFound = not na(ta.pivotlow(rsi, lbL, lbR))
+phFound = not na(ta.pivothigh(rsi, lbL, lbR))
+
+inRange(bool cond) =>
+    bars = ta.barssince(cond)
+    rangeMin <= bars and bars <= rangeMax
+
+plInRange = inRange(plFound[1])
+phInRange = inRange(phFound[1])
+
+prevRsiPL  = ta.valuewhen(plFound, rsi[lbR], 1)
+prevLowPL  = ta.valuewhen(plFound, low[lbR], 1)
+prevBarPL  = ta.valuewhen(plFound, bar_index[lbR], 1)
+prevRsiPH  = ta.valuewhen(phFound, rsi[lbR], 1)
+prevHighPH = ta.valuewhen(phFound, high[lbR], 1)
+prevBarPH  = ta.valuewhen(phFound, bar_index[lbR], 1)
+
+curRsi  = rsi[lbR]
+curLow  = low[lbR]
+curHigh = high[lbR]
+pivBar  = bar_index - lbR
+
+zoneBull = not zoneOnly or math.min(curRsi, prevRsiPL) <= osLvl + 5
+zoneBear = not zoneOnly or math.max(curRsi, prevRsiPH) >= obLvl - 5
+
+bullReg = showBull and showReg and plFound and plInRange and curRsi > prevRsiPL and curLow < prevLowPL and zoneBull
+bullHid = showBull and showHid and plFound and plInRange and curRsi < prevRsiPL and curLow > prevLowPL
+bearReg = showBear and showReg and phFound and phInRange and curRsi < prevRsiPH and curHigh > prevHighPH and zoneBear
+bearHid = showBear and showHid and phFound and phInRange and curRsi > prevRsiPH and curHigh < prevHighPH
+
+// ───────────── 그리기 (가격 차트) ─────────────
+drawDiv(int x1, float y1, int x2, float y2, color col, bool hidden, string txt, bool isBull) =>
+    line.new(x1, y1, x2, y2, color = col, style = hidden ? line.style_dashed : line.style_solid, width = lineW)
+    if showLabel
+        label.new(x2, y2, txt, color = color.new(col, 15), textcolor = color.white, size = size.small, style = isBull ? label.style_label_up : label.style_label_down, yloc = isBull ? yloc.belowbar : yloc.abovebar)
+
+if bullReg
+    drawDiv(prevBarPL, prevLowPL, pivBar, curLow, cBull, false, "상승 다이버전스", true)
+if bullHid
+    drawDiv(prevBarPL, prevLowPL, pivBar, curLow, color.new(cBull, 30), true, "H 상승 다이버전스", true)
+if bearReg
+    drawDiv(prevBarPH, prevHighPH, pivBar, curHigh, cBear, false, "하락 다이버전스", false)
+if bearHid
+    drawDiv(prevBarPH, prevHighPH, pivBar, curHigh, color.new(cBear, 30), true, "H 하락 다이버전스", false)
+
+// ───────────── 알림 ─────────────
+alertcondition(bullReg, "상승 다이버전스", "TG: 상승 다이버전스 확정 (반등 가능성) — {{ticker}} {{interval}}")
+alertcondition(bearReg, "하락 다이버전스", "TG: 하락 다이버전스 확정 (하락 가능성) — {{ticker}} {{interval}}")
+alertcondition(bullHid, "H 상승 다이버전스", "TG: H 상승 다이버전스 (상승 추세 지속 가능성) — {{ticker}} {{interval}}")
+alertcondition(bearHid, "H 하락 다이버전스", "TG: H 하락 다이버전스 (하락 추세 지속 가능성) — {{ticker}} {{interval}}")
