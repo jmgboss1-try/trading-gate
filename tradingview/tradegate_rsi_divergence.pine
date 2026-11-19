@@ -1,8 +1,8 @@
 //@version=6
-// TradeGate RSI 다이버전스 — 가격 차트 위에 다이버전스만 표시
-// 평소 쓰는 RSI 지표는 그대로 두고, 이 지표로 다이버전스만 켜고 끕니다.
-// RSI 기간·소스를 평소 RSI와 같게 맞추세요.
-indicator("TradeGate RSI 다이버전스", shorttitle = "TG 다이버전스", overlay = true, max_labels_count = 500, max_lines_count = 500)
+// TradeGate RSI 다이버전스 — 평소 쓰는 기본 RSI 창 위에 다이버전스만 겹쳐 표시
+// 사용법: 차트에 추가 → 지표 이름 옆 ⋯ → "창 이동" → RSI가 있는 창으로 이동
+// RSI 기간·소스를 평소 RSI와 같게 맞추면 선이 RSI 선과 정확히 겹칩니다.
+indicator("TradeGate RSI 다이버전스", shorttitle = "TG 다이버전스", overlay = false, max_labels_count = 500, max_lines_count = 500)
 
 // ───────────── 입력 ─────────────
 grpR = "RSI (평소 RSI와 같게)"
@@ -23,6 +23,7 @@ obLvl    = input.int(70, "과매수 기준", minval = 50, maxval = 100, group = 
 osLvl    = input.int(30, "과매도 기준", minval = 0, maxval = 50, group = grpD)
 
 grpS = "표시"
+where     = input.string("RSI 창", "표시 위치", options = ["RSI 창", "가격 차트", "둘 다"], group = grpS, tooltip = "RSI 창: 기본 RSI 창으로 옮겨서 RSI 선 위에 겹쳐 보기\n가격 차트: 캔들 위에 표시")
 showLabel = input.bool(true, "라벨 표시", group = grpS)
 cBull     = input.color(#26d39a, "상승 색", group = grpS, inline = "col")
 cBear     = input.color(#ff4d6d, "하락 색", group = grpS, inline = "col")
@@ -31,6 +32,11 @@ lineW     = input.int(2, "선 두께", minval = 1, maxval = 4, group = grpS)
 // ───────────── 계산 ─────────────
 // 모든 ta.* 호출은 매 봉 실행되도록 조건식 밖에서 계산
 rsi = ta.rsi(src, len)
+
+// RSI 창과 눈금을 맞추기 위한 보이지 않는 RSI (선은 그리지 않음)
+plot(rsi, "RSI (눈금 맞춤용)", color = color.new(color.gray, 100), display = display.none)
+onRsiPane = where != "가격 차트"
+onPrice   = where != "RSI 창"
 
 plFound = not na(ta.pivotlow(rsi, lbL, lbR))
 phFound = not na(ta.pivothigh(rsi, lbL, lbR))
@@ -62,20 +68,28 @@ bullHid = showBull and showHid and plFound and plInRange and curRsi < prevRsiPL 
 bearReg = showBear and showReg and phFound and phInRange and curRsi < prevRsiPH and curHigh > prevHighPH and zoneBear
 bearHid = showBear and showHid and phFound and phInRange and curRsi > prevRsiPH and curHigh < prevHighPH
 
-// ───────────── 그리기 (가격 차트) ─────────────
-drawDiv(int x1, float y1, int x2, float y2, color col, bool hidden, string txt, bool isBull) =>
-    line.new(x1, y1, x2, y2, color = col, style = hidden ? line.style_dashed : line.style_solid, width = lineW)
-    if showLabel
-        label.new(x2, y2, txt, color = color.new(col, 15), textcolor = color.white, size = size.small, style = isBull ? label.style_label_up : label.style_label_down, yloc = isBull ? yloc.belowbar : yloc.abovebar)
+// ───────────── 그리기 ─────────────
+// x1/x2: 두 피벗의 봉 위치 · r1/r2: RSI 값 · p1/p2: 가격(저점 또는 고점)
+drawDiv(int x1, float r1, float p1, int x2, float r2, float p2, color col, bool hidden, string txt, bool isBull) =>
+    st = hidden ? line.style_dashed : line.style_solid
+    lblStyle = isBull ? label.style_label_up : label.style_label_down
+    if onRsiPane
+        line.new(x1, r1, x2, r2, color = col, style = st, width = lineW)
+        if showLabel
+            label.new(x2, r2, txt, color = color.new(col, 15), textcolor = color.white, size = size.tiny, style = lblStyle)
+    if onPrice
+        line.new(x1, p1, x2, p2, color = col, style = st, width = lineW, force_overlay = true)
+        if showLabel
+            label.new(x2, p2, txt, color = color.new(col, 15), textcolor = color.white, size = size.small, style = lblStyle, yloc = isBull ? yloc.belowbar : yloc.abovebar, force_overlay = true)
 
 if bullReg
-    drawDiv(prevBarPL, prevLowPL, pivBar, curLow, cBull, false, "상승 다이버전스", true)
+    drawDiv(prevBarPL, prevRsiPL, prevLowPL, pivBar, curRsi, curLow, cBull, false, "상승 다이버전스", true)
 if bullHid
-    drawDiv(prevBarPL, prevLowPL, pivBar, curLow, color.new(cBull, 30), true, "H 상승 다이버전스", true)
+    drawDiv(prevBarPL, prevRsiPL, prevLowPL, pivBar, curRsi, curLow, color.new(cBull, 30), true, "H 상승 다이버전스", true)
 if bearReg
-    drawDiv(prevBarPH, prevHighPH, pivBar, curHigh, cBear, false, "하락 다이버전스", false)
+    drawDiv(prevBarPH, prevRsiPH, prevHighPH, pivBar, curRsi, curHigh, cBear, false, "하락 다이버전스", false)
 if bearHid
-    drawDiv(prevBarPH, prevHighPH, pivBar, curHigh, color.new(cBear, 30), true, "H 하락 다이버전스", false)
+    drawDiv(prevBarPH, prevRsiPH, prevHighPH, pivBar, curRsi, curHigh, color.new(cBear, 30), true, "H 하락 다이버전스", false)
 
 // ───────────── 알림 ─────────────
 alertcondition(bullReg, "상승 다이버전스", "TG: 상승 다이버전스 확정 (반등 가능성) — {{ticker}} {{interval}}")
