@@ -21,7 +21,8 @@ lbL       = input.int(5, "저점·고점 판단: 왼쪽 봉 수", minval = 1, gr
 lbR       = input.int(3, "저점·고점 판단: 오른쪽 봉 수", minval = 1, group = grpD, tooltip = "이 봉 수만큼 지나야 다이버전스가 확정됩니다. 작을수록 빠르지만 신호가 많아집니다.")
 rangeMin  = input.int(5, "두 저점 사이 최소 봉", minval = 2, group = grpD)
 rangeMax  = input.int(60, "두 저점 사이 최대 봉", minval = 5, maxval = 200, group = grpD)
-needZone  = input.bool(true, "과매도/과매수 터치 필수", group = grpD, tooltip = "상승 다이버전스는 두 저점 사이 구간에서 RSI가 과매도 기준 이하를, 하락 다이버전스는 과매수 기준 이상을 찍어야 표시 (H 다이버전스에는 적용 안 함)")
+needZone  = input.bool(true, "시작점 과매도/과매수 필수", group = grpD, tooltip = "상승 다이버전스는 첫 번째 저점의 RSI가 과매도 기준 이하, 하락 다이버전스는 첫 번째 고점의 RSI가 과매수 기준 이상이어야 합니다")
+needExit  = input.bool(true, "과매도/과매수 해소 후에만", group = grpD, tooltip = "두 저점(고점) 사이에서 RSI 종가가 과매도 위로(과매수 아래로) 한 번은 돌아와야 합니다. 과매수가 이어지는 중에 생긴 고점끼리(중복 과매수)는 다이버전스로 보지 않습니다")
 showBull  = input.bool(true, "상승 쪽 표시", group = grpD, inline = "side")
 showBear  = input.bool(true, "하락 쪽 표시", group = grpD, inline = "side")
 tol       = input.int(2, "RSI 저점 찾기 허용 봉", minval = 0, maxval = 5, group = grpD, tooltip = "가격 저점 앞뒤 이 봉 수 안에서 RSI 최저(최고)값을 찾습니다")
@@ -110,14 +111,6 @@ pivBar  = bar_index - lbR
 curLow  = low[lbR]
 curHigh = high[lbR]
 
-prevBarPL  = ta.valuewhen(plFound, pivBar, 1)
-prevLowPL  = ta.valuewhen(plFound, curLow, 1)
-prevRsiPL  = ta.valuewhen(plFound, rsiLowNear, 1)
-prevRBarPL = ta.valuewhen(plFound, rsiLowBar, 1)
-prevBarPH  = ta.valuewhen(phFound, pivBar, 1)
-prevHighPH = ta.valuewhen(phFound, curHigh, 1)
-prevRsiPH  = ta.valuewhen(phFound, rsiHighNear, 1)
-prevRBarPH = ta.valuewhen(phFound, rsiHighBar, 1)
 
 RSI_SLACK = 1.0 // RSI 선 통과 허용 오차 (RSI 포인트)
 
@@ -125,6 +118,7 @@ RSI_SLACK = 1.0 // RSI 선 통과 허용 오차 (RSI 포인트)
 checkLows(int x1, float p1, float r1, int x2, float p2, float r2) =>
     bool clean = true
     float minR = math.min(r1, r2)
+    bool exited = false // 사이 봉 중 RSI 종가가 과매도 위로 올라온 적이 있는지
     n = x2 - x1
     if n > 1
         for i = 1 to n - 1
@@ -135,12 +129,15 @@ checkLows(int x1, float p1, float r1, int x2, float p2, float r2) =>
             if rsi[off] < r1 + (r2 - r1) * t - RSI_SLACK
                 clean := false
             minR := math.min(minR, rsi[off])
-    [clean, minR]
+            if rsi[off] > osLvl
+                exited := true
+    [clean, minR, exited]
 
 // 두 고점을 잇는 선 위로 사이 봉의 가격·RSI가 올라가지 않았는지 + 구간 RSI 최고값
 checkHighs(int x1, float p1, float r1, int x2, float p2, float r2) =>
     bool clean = true
     float maxR = math.max(r1, r2)
+    bool exited = false // 사이 봉 중 RSI 종가가 과매수 아래로 내려온 적이 있는지
     n = x2 - x1
     if n > 1
         for i = 1 to n - 1
@@ -151,32 +148,11 @@ checkHighs(int x1, float p1, float r1, int x2, float p2, float r2) =>
             if rsi[off] > r1 + (r2 - r1) * t + RSI_SLACK
                 clean := false
             maxR := math.max(maxR, rsi[off])
-    [clean, maxR]
+            if rsi[off] < obLvl
+                exited := true
+    [clean, maxR, exited]
 
-gapPL = pivBar - prevBarPL
-gapPH = pivBar - prevBarPH
-bullBase = showBull and plFound and not na(prevBarPL) and gapPL >= rangeMin and gapPL <= rangeMax
-bearBase = showBear and phFound and not na(prevBarPH) and gapPH >= rangeMin and gapPH <= rangeMax
-
-bool  bullClean = false
-float bullMinR  = na
-if bullBase
-    [c, m] = checkLows(int(prevBarPL), prevLowPL, prevRsiPL, pivBar, curLow, rsiLowNear)
-    bullClean := c
-    bullMinR  := m
-
-bool  bearClean = false
-float bearMaxR  = na
-if bearBase
-    [c, m] = checkHighs(int(prevBarPH), prevHighPH, prevRsiPH, pivBar, curHigh, rsiHighNear)
-    bearClean := c
-    bearMaxR  := m
-
-bullReg = showReg and bullBase and bullClean and curLow < prevLowPL and rsiLowNear > prevRsiPL and (not needZone or bullMinR <= osLvl)
-bearReg = showReg and bearBase and bearClean and curHigh > prevHighPH and rsiHighNear < prevRsiPH and (not needZone or bearMaxR >= obLvl)
-
-// H 다이버전스: 시작점 RSI ≈ 50 (± midTol), 완성점 RSI가 과매도/과매수 도달
-// 시작점은 바로 앞 저점(고점)만이 아니라, 범위 안의 이전 저점(고점)들 중 조건을 만족하는 가장 가까운 것
+// 이전 저점·고점 기록 (최근 30개) — 시작점을 바로 앞 하나가 아니라 범위 안에서 찾기 위함
 var array<int>   plBars  = array.new<int>()
 var array<float> plVals  = array.new<float>()
 var array<float> plRsis  = array.new<float>()
@@ -186,11 +162,59 @@ var array<float> phVals  = array.new<float>()
 var array<float> phRsis  = array.new<float>()
 var array<int>   phRBars = array.new<int>()
 
-int   hbIdx = -1
-int   hbX   = na
-float hbP   = na
-int   hbXR  = na
-float hbR   = na
+// ── 일반 다이버전스 ──
+// 상승: 가격 저점 ↓, RSI 저점 ↑, 첫 저점 RSI ≤ 과매도(설정), 사이에 과매도 해소(설정), 선이 깨지지 않음
+// 하락: 가격 고점 ↑, RSI 고점 ↓, 첫 고점 RSI ≥ 과매수(설정), 사이에 과매수 해소(설정), 선이 깨지지 않음
+int   rbX  = na
+float rbP  = na
+int   rbXR = na
+float rbR  = na
+if showReg and showBull and plFound and array.size(plBars) > 0
+    for k = array.size(plBars) - 1 to 0
+        x1  = array.get(plBars, k)
+        gap = pivBar - x1
+        if gap > rangeMax
+            break
+        p1 = array.get(plVals, k)
+        r1 = array.get(plRsis, k)
+        if gap >= rangeMin and curLow < p1 and rsiLowNear > r1 and (not needZone or r1 <= osLvl)
+            [c, m, e] = checkLows(x1, p1, r1, pivBar, curLow, rsiLowNear)
+            if c and (not needExit or e)
+                rbX  := x1
+                rbP  := p1
+                rbXR := array.get(plRBars, k)
+                rbR  := r1
+                break
+
+int   rsX  = na
+float rsP  = na
+int   rsXR = na
+float rsR  = na
+if showReg and showBear and phFound and array.size(phBars) > 0
+    for k = array.size(phBars) - 1 to 0
+        x1  = array.get(phBars, k)
+        gap = pivBar - x1
+        if gap > rangeMax
+            break
+        p1 = array.get(phVals, k)
+        r1 = array.get(phRsis, k)
+        if gap >= rangeMin and curHigh > p1 and rsiHighNear < r1 and (not needZone or r1 >= obLvl)
+            [c, m, e] = checkHighs(x1, p1, r1, pivBar, curHigh, rsiHighNear)
+            if c and (not needExit or e)
+                rsX  := x1
+                rsP  := p1
+                rsXR := array.get(phRBars, k)
+                rsR  := r1
+                break
+
+bullReg = not na(rbX)
+bearReg = not na(rsX)
+
+// ── H 다이버전스 ── 시작점 RSI ≈ 50 (± midTol), 완성점 RSI가 과매도/과매수 도달
+int   hbX  = na
+float hbP  = na
+int   hbXR = na
+float hbR  = na
 if showHid and showBull and plFound and rsiLowNear <= osLvl and array.size(plBars) > 0
     for k = array.size(plBars) - 1 to 0
         x1  = array.get(plBars, k)
@@ -200,20 +224,18 @@ if showHid and showBull and plFound and rsiLowNear <= osLvl and array.size(plBar
         p1 = array.get(plVals, k)
         r1 = array.get(plRsis, k)
         if gap >= rangeMin and curLow > p1 and math.abs(r1 - 50) <= midTol
-            [c, m] = checkLows(x1, p1, r1, pivBar, curLow, rsiLowNear)
+            [c, m, e] = checkLows(x1, p1, r1, pivBar, curLow, rsiLowNear)
             if c
-                hbIdx := k
-                hbX   := x1
-                hbP   := p1
-                hbXR  := array.get(plRBars, k)
-                hbR   := r1
+                hbX  := x1
+                hbP  := p1
+                hbXR := array.get(plRBars, k)
+                hbR  := r1
                 break
 
-int   hsIdx = -1
-int   hsX   = na
-float hsP   = na
-int   hsXR  = na
-float hsR   = na
+int   hsX  = na
+float hsP  = na
+int   hsXR = na
+float hsR  = na
 if showHid and showBear and phFound and rsiHighNear >= obLvl and array.size(phBars) > 0
     for k = array.size(phBars) - 1 to 0
         x1  = array.get(phBars, k)
@@ -223,17 +245,16 @@ if showHid and showBear and phFound and rsiHighNear >= obLvl and array.size(phBa
         p1 = array.get(phVals, k)
         r1 = array.get(phRsis, k)
         if gap >= rangeMin and curHigh < p1 and math.abs(r1 - 50) <= midTol
-            [c, m] = checkHighs(x1, p1, r1, pivBar, curHigh, rsiHighNear)
+            [c, m, e] = checkHighs(x1, p1, r1, pivBar, curHigh, rsiHighNear)
             if c
-                hsIdx := k
-                hsX   := x1
-                hsP   := p1
-                hsXR  := array.get(phRBars, k)
-                hsR   := r1
+                hsX  := x1
+                hsP  := p1
+                hsXR := array.get(phRBars, k)
+                hsR  := r1
                 break
 
-bullHid = hbIdx >= 0
-bearHid = hsIdx >= 0
+bullHid = not na(hbX)
+bearHid = not na(hsX)
 
 // 이번 저점·고점을 기록 (최근 30개만 유지)
 if plFound
@@ -276,7 +297,7 @@ var string lastDiv    = "없음"
 var int    lastDivBar = na
 
 if bullReg
-    drawDiv(int(prevBarPL), prevLowPL, int(prevRBarPL), prevRsiPL, pivBar, curLow, rsiLowBar, rsiLowNear, cBull, false, "상승 다이버전스", true)
+    drawDiv(rbX, rbP, rbXR, rbR, pivBar, curLow, rsiLowBar, rsiLowNear, cBull, false, "상승 다이버전스", true)
     lastDiv    := "상승 다이버전스"
     lastDivBar := pivBar
 if bullHid
@@ -284,7 +305,7 @@ if bullHid
     lastDiv    := "H 상승 다이버전스"
     lastDivBar := pivBar
 if bearReg
-    drawDiv(int(prevBarPH), prevHighPH, int(prevRBarPH), prevRsiPH, pivBar, curHigh, rsiHighBar, rsiHighNear, cBear, false, "하락 다이버전스", false)
+    drawDiv(rsX, rsP, rsXR, rsR, pivBar, curHigh, rsiHighBar, rsiHighNear, cBear, false, "하락 다이버전스", false)
     lastDiv    := "하락 다이버전스"
     lastDivBar := pivBar
 if bearHid
