@@ -22,7 +22,7 @@ lbR       = input.int(3, "저점·고점 판단: 오른쪽 봉 수", minval = 1,
 rangeMin  = input.int(5, "두 저점 사이 최소 봉", minval = 2, group = grpD)
 rangeMax  = input.int(60, "두 저점 사이 최대 봉", minval = 5, maxval = 200, group = grpD)
 needZone  = input.bool(true, "시작점 과매도/과매수 필수", group = grpD, tooltip = "상승 다이버전스는 첫 번째 저점의 RSI가 과매도 기준 이하, 하락 다이버전스는 첫 번째 고점의 RSI가 과매수 기준 이상이어야 합니다")
-needExit  = input.bool(true, "과매도/과매수 해소 후에만", group = grpD, tooltip = "두 저점(고점) 사이에서 RSI 종가가 과매도 위로(과매수 아래로) 한 번은 돌아와야 합니다. 과매수가 이어지는 중에 생긴 고점끼리(중복 과매수)는 다이버전스로 보지 않습니다")
+needExit  = input.bool(true, "중복 과매도/과매수 제외", group = grpD, tooltip = "두 번째 저점(고점)은 과매도(과매수)가 풀린 상태여야 합니다 — 상승은 두 번째 저점 RSI가 과매도 기준 위, 하락은 두 번째 고점 RSI가 과매수 기준 아래. 두 점이 모두 과매도(과매수) 안에 있으면 다이버전스로 보지 않습니다")
 showBull  = input.bool(true, "상승 쪽 표시", group = grpD, inline = "side")
 showBear  = input.bool(true, "하락 쪽 표시", group = grpD, inline = "side")
 tol       = input.int(2, "RSI 저점 찾기 허용 봉", minval = 0, maxval = 5, group = grpD, tooltip = "가격 저점 앞뒤 이 봉 수 안에서 RSI 최저(최고)값을 찾습니다")
@@ -93,7 +93,7 @@ lblSize   = labelSize == "작게" ? size.small : size.tiny
 // 1) 저점·고점은 '가격'(심지 포함)에서 찾는다
 // 2) 그 시점 ±tol봉 안의 RSI 최저·최고값과 비교한다
 // 3) 두 점을 잇는 선을 사이 봉의 가격·RSI가 뚫으면 무효
-// 4) 일반 다이버전스는 첫 점이 과매도/과매수이고, 사이에 그 구간이 한 번 해소돼야 인정 (설정)
+// 4) 일반 다이버전스는 첫 점이 과매도/과매수 안, 두 번째 점은 그 구간이 풀린 상태여야 인정 (설정)
 // 모든 ta.* 호출은 매 봉 실행되도록 조건식 밖에서 계산
 plFound = not na(ta.pivotlow(low, lbL, lbR))
 phFound = not na(ta.pivothigh(high, lbL, lbR))
@@ -162,8 +162,8 @@ var array<float> phRsis  = array.new<float>()
 var array<int>   phRBars = array.new<int>()
 
 // ── 일반 다이버전스 ──
-// 상승: 가격 저점 ↓, RSI 저점 ↑, 첫 저점 RSI ≤ 과매도(설정), 사이에 과매도 해소(설정), 선이 깨지지 않음
-// 하락: 가격 고점 ↑, RSI 고점 ↓, 첫 고점 RSI ≥ 과매수(설정), 사이에 과매수 해소(설정), 선이 깨지지 않음
+// 상승: 가격 저점 ↓, RSI 저점 ↑, 첫 저점 RSI ≤ 과매도(설정), 두 번째 저점 RSI > 과매도 = 해소 상태(설정), 선이 깨지지 않음
+// 하락: 가격 고점 ↑, RSI 고점 ↓, 첫 고점 RSI ≥ 과매수(설정), 두 번째 고점 RSI < 과매수 = 해소 상태(설정), 선이 깨지지 않음
 int   rbX  = na
 float rbP  = na
 int   rbXR = na
@@ -178,7 +178,7 @@ if showReg and showBull and plFound and array.size(plBars) > 0
         r1 = array.get(plRsis, k)
         if gap >= rangeMin and curLow < p1 and rsiLowNear > r1 and (not needZone or r1 <= osLvl)
             [c, m, e] = checkLows(x1, p1, r1, pivBar, curLow, rsiLowNear)
-            if c and (not needExit or e)
+            if c and (not needExit or (e and rsiLowNear > osLvl))
                 rbX  := x1
                 rbP  := p1
                 rbXR := array.get(plRBars, k)
@@ -199,7 +199,7 @@ if showReg and showBear and phFound and array.size(phBars) > 0
         r1 = array.get(phRsis, k)
         if gap >= rangeMin and curHigh > p1 and rsiHighNear < r1 and (not needZone or r1 >= obLvl)
             [c, m, e] = checkHighs(x1, p1, r1, pivBar, curHigh, rsiHighNear)
-            if c and (not needExit or e)
+            if c and (not needExit or (e and rsiHighNear < obLvl))
                 rsX  := x1
                 rsP  := p1
                 rsXR := array.get(phRBars, k)
