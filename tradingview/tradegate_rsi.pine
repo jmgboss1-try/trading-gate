@@ -26,6 +26,7 @@ needZone  = input.bool(true, "시작점 과매도/과매수 필수", group = grp
 needExit  = input.bool(true, "중복 과매도/과매수 제외", group = grpD, tooltip = "두 점 사이에서 RSI가 과매도+여유(과매수-여유)까지 확실히 벗어났다가 돌아온 경우만 인정합니다. 과매도(과매수) 안에서 잠깐 기준선을 넘었다 들어온 것은 해소로 보지 않습니다")
 exitMargin = input.float(5, "해소 판정 여유 (RSI)", minval = 0, maxval = 20, step = 0.5, group = grpD, tooltip = "상승: 사이에서 RSI가 과매도 기준 + 이 값 이상 올라와야 해소. 하락: 과매수 기준 - 이 값 이하로 내려와야 해소")
 secTol    = input.float(1.5, "두 번째 점 허용 오차 (RSI)", minval = 0, maxval = 5, step = 0.5, group = grpD, tooltip = "상승: 두 번째 저점 RSI가 과매도 기준 - 이 값보다 높으면 인정 (예: 30 → 28.5 초과). 하락은 반대")
+minDiff   = input.float(3, "최소 RSI 차이", minval = 0, maxval = 20, step = 0.5, group = grpD, tooltip = "일반 다이버전스의 두 점 RSI 차이가 이 값 미만이면 표시하지 않습니다 (평평하고 애매한 다이버전스 제외)")
 showBull  = input.bool(true, "상승 쪽 표시", group = grpD, inline = "side")
 showBear  = input.bool(true, "하락 쪽 표시", group = grpD, inline = "side")
 tol       = input.int(5, "RSI 저점 찾기 허용 봉", minval = 0, maxval = 10, group = grpD, tooltip = "가격 저점(고점) 앞쪽으로 이 봉 수, 뒤쪽으로는 확정된 봉까지 안에서 RSI 최저(최고)값을 찾습니다. 가격 저점과 RSI 저점이 몇 봉 어긋나는 경우를 잡기 위함")
@@ -147,7 +148,7 @@ if showReg and showBull and plFound and array.size(plBars) > 0
         p1  = array.get(plVals, k)
         r1  = array.get(plRsis, k)
         xr1 = array.get(plRBars, k)
-        if gap >= rangeMin and curLow < p1 and rsiLowNear > r1 and (not needZone or r1 <= osLvl)
+        if gap >= rangeMin and curLow < p1 and rsiLowNear > r1 and rsiLowNear - r1 >= minDiff and (not needZone or r1 <= osLvl)
             bool ok     = true
             bool exited = false
             // 가격: 두 점을 잇는 선을 사이 봉이 뚫으면 무효
@@ -165,12 +166,12 @@ if showReg and showBull and plFound and array.size(plBars) > 0
                         break
                     if rv > osLvl + exitMargin
                         exited := true
-            if ok and (not needExit or (exited and rsiLowNear > osLvl - secTol))
+            // 조건을 만족하는 시작점 중 RSI가 가장 깊은 저점(과매도의 끝)을 선택
+            if ok and (not needExit or (exited and rsiLowNear > osLvl - secTol)) and (na(rbX) or r1 < rbR)
                 rbX  := x1
                 rbP  := p1
                 rbXR := xr1
                 rbR  := r1
-                break
 
 int   rsX  = na
 float rsP  = na
@@ -185,7 +186,7 @@ if showReg and showBear and phFound and array.size(phBars) > 0
         p1  = array.get(phVals, k)
         r1  = array.get(phRsis, k)
         xr1 = array.get(phRBars, k)
-        if gap >= rangeMin and curHigh > p1 and rsiHighNear < r1 and (not needZone or r1 >= obLvl)
+        if gap >= rangeMin and curHigh > p1 and rsiHighNear < r1 and r1 - rsiHighNear >= minDiff and (not needZone or r1 >= obLvl)
             bool ok     = true
             bool exited = false
             // 가격: 두 점을 잇는 선을 사이 봉이 뚫으면 무효
@@ -203,12 +204,12 @@ if showReg and showBear and phFound and array.size(phBars) > 0
                         break
                     if rv < obLvl - exitMargin
                         exited := true
-            if ok and (not needExit or (exited and rsiHighNear < obLvl + secTol))
+            // 조건을 만족하는 시작점 중 RSI가 가장 높은 고점(과매수의 끝)을 선택
+            if ok and (not needExit or (exited and rsiHighNear < obLvl + secTol)) and (na(rsX) or r1 > rsR)
                 rsX  := x1
                 rsP  := p1
                 rsXR := xr1
                 rsR  := r1
-                break
 
 bullReg = not na(rbX)
 bearReg = not na(rsX)
@@ -421,7 +422,7 @@ if barstate.islast
                 p1  = array.get(plVals, k)
                 r1  = array.get(plRsis, k)
                 xr1 = array.get(plRBars, k)
-                if gap >= rangeMin and qLow < p1 and qRL > r1 and (not needZone or r1 <= osLvl)
+                if gap >= rangeMin and qLow < p1 and qRL > r1 and qRL - r1 >= minDiff and (not needZone or r1 <= osLvl)
                     bool ok     = true
                     bool exited = false
                     // 가격: 두 점을 잇는 선을 사이 봉이 뚫으면 무효
@@ -439,12 +440,12 @@ if barstate.islast
                                 break
                             if rv > osLvl + exitMargin
                                 exited := true
-                    if ok and (not needExit or (exited and qRL > osLvl - secTol))
+                    // 조건을 만족하는 시작점 중 RSI가 가장 깊은 저점(과매도의 끝)을 선택
+                    if ok and (not needExit or (exited and qRL > osLvl - secTol)) and (na(qbX) or r1 < qbR)
                         qbX  := x1
                         qbP  := p1
                         qbXR := xr1
                         qbR  := r1
-                        break
 
         int   qsX  = na
         float qsP  = na
@@ -459,7 +460,7 @@ if barstate.islast
                 p1  = array.get(phVals, k)
                 r1  = array.get(phRsis, k)
                 xr1 = array.get(phRBars, k)
-                if gap >= rangeMin and qHigh > p1 and qRH < r1 and (not needZone or r1 >= obLvl)
+                if gap >= rangeMin and qHigh > p1 and qRH < r1 and r1 - qRH >= minDiff and (not needZone or r1 >= obLvl)
                     bool ok     = true
                     bool exited = false
                     // 가격: 두 점을 잇는 선을 사이 봉이 뚫으면 무효
@@ -477,12 +478,12 @@ if barstate.islast
                                 break
                             if rv < obLvl - exitMargin
                                 exited := true
-                    if ok and (not needExit or (exited and qRH < obLvl + secTol))
+                    // 조건을 만족하는 시작점 중 RSI가 가장 높은 고점(과매수의 끝)을 선택
+                    if ok and (not needExit or (exited and qRH < obLvl + secTol)) and (na(qsX) or r1 > qsR)
                         qsX  := x1
                         qsP  := p1
                         qsXR := xr1
                         qsR  := r1
-                        break
 
         int   qhbX  = na
         float qhbP  = na
