@@ -21,6 +21,7 @@ lbL       = input.int(5, "저점·고점 판단: 왼쪽 봉 수", minval = 1, gr
 lbR       = input.int(3, "저점·고점 판단: 오른쪽 봉 수", minval = 1, group = grpD, tooltip = "이 봉 수만큼 지나야 다이버전스가 확정됩니다. 작을수록 빠르지만 신호가 많아집니다.")
 rangeMin  = input.int(5, "두 저점 사이 최소 봉", minval = 2, group = grpD)
 rangeMax  = input.int(60, "두 저점 사이 최대 봉", minval = 5, maxval = 200, group = grpD)
+hidRangeMax = input.int(120, "H 다이버전스: 두 점 사이 최대 봉", minval = 5, maxval = 250, group = grpD, tooltip = "H 다이버전스는 추세를 따라 길게 형성되는 경우가 많아 일반 다이버전스보다 넓게 봅니다")
 needZone  = input.bool(true, "시작점 과매도/과매수 필수", group = grpD, tooltip = "상승 다이버전스는 첫 번째 저점의 RSI가 과매도 기준 이하, 하락 다이버전스는 첫 번째 고점의 RSI가 과매수 기준 이상이어야 합니다")
 needExit  = input.bool(true, "중복 과매도/과매수 제외", group = grpD, tooltip = "두 번째 저점(고점)은 과매도(과매수)가 풀린 상태여야 합니다 — 상승은 두 번째 저점 RSI가 과매도 기준 위, 하락은 두 번째 고점 RSI가 과매수 기준 아래. 두 점이 모두 과매도(과매수) 안에 있으면 다이버전스로 보지 않습니다")
 showBull  = input.bool(true, "상승 쪽 표시", group = grpD, inline = "side")
@@ -114,7 +115,7 @@ curHigh = high[lbR]
 RSI_SLACK = 0.5 // RSI 선 통과 허용 오차 (RSI 포인트)
 LBL_GAP   = 4.0 // RSI 창 라벨을 선 끝에서 띄우는 거리 (RSI 포인트) — 박스 없이 글자만
 
-// 이전 저점·고점 기록 (최근 30개) — 시작점을 바로 앞 하나가 아니라 범위 안에서 찾기 위함
+// 이전 저점·고점 기록 (최근 60개) — 시작점을 바로 앞 하나가 아니라 범위 안에서 찾기 위함
 var array<int>   plBars  = array.new<int>()
 var array<float> plVals  = array.new<float>()
 var array<float> plRsis  = array.new<float>()
@@ -217,7 +218,7 @@ if showHid and rsiLowNear <= osLvl and showBull and plFound and array.size(plBar
     for k = array.size(plBars) - 1 to 0
         x1  = array.get(plBars, k)
         gap = pivBar - x1
-        if gap > rangeMax
+        if gap > hidRangeMax
             break
         p1  = array.get(plVals, k)
         r1  = array.get(plRsis, k)
@@ -255,7 +256,7 @@ if showHid and rsiHighNear >= obLvl and showBear and phFound and array.size(phBa
     for k = array.size(phBars) - 1 to 0
         x1  = array.get(phBars, k)
         gap = pivBar - x1
-        if gap > rangeMax
+        if gap > hidRangeMax
             break
         p1  = array.get(phVals, k)
         r1  = array.get(phRsis, k)
@@ -288,13 +289,13 @@ if showHid and rsiHighNear >= obLvl and showBear and phFound and array.size(phBa
 bullHid = not na(hbX)
 bearHid = not na(hsX)
 
-// 이번 저점·고점을 기록 (최근 30개만 유지)
+// 이번 저점·고점을 기록 (최근 60개만 유지)
 if plFound
     array.push(plBars, pivBar)
     array.push(plVals, curLow)
     array.push(plRsis, rsiLowNear)
     array.push(plRBars, rsiLowBar)
-    if array.size(plBars) > 30
+    if array.size(plBars) > 60
         array.shift(plBars)
         array.shift(plVals)
         array.shift(plRsis)
@@ -304,7 +305,7 @@ if phFound
     array.push(phVals, curHigh)
     array.push(phRsis, rsiHighNear)
     array.push(phRBars, rsiHighBar)
-    if array.size(phBars) > 30
+    if array.size(phBars) > 60
         array.shift(phBars)
         array.shift(phVals)
         array.shift(phRsis)
