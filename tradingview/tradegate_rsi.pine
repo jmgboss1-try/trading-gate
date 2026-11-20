@@ -111,45 +111,8 @@ pivBar  = bar_index - lbR
 curLow  = low[lbR]
 curHigh = high[lbR]
 
-RSI_SLACK = 1.0 // RSI 선 통과 허용 오차 (RSI 포인트)
-
-// 두 저점을 잇는 선 아래로 사이 봉의 가격·RSI가 내려가지 않았는지 + 구간 RSI 최저값
-checkLows(int x1, float p1, float r1, int x2, float p2, float r2) =>
-    bool clean = true
-    float minR = math.min(r1, r2)
-    bool exited = false // 사이 봉 중 RSI 종가가 과매도 위로 올라온 적이 있는지
-    n = x2 - x1
-    if n > 1
-        for i = 1 to n - 1
-            off  = bar_index - (x1 + i)
-            t    = float(i) / n
-            if low[off] < p1 + (p2 - p1) * t
-                clean := false
-            if rsi[off] < r1 + (r2 - r1) * t - RSI_SLACK
-                clean := false
-            minR := math.min(minR, rsi[off])
-            if rsi[off] > osLvl
-                exited := true
-    [clean, minR, exited]
-
-// 두 고점을 잇는 선 위로 사이 봉의 가격·RSI가 올라가지 않았는지 + 구간 RSI 최고값
-checkHighs(int x1, float p1, float r1, int x2, float p2, float r2) =>
-    bool clean = true
-    float maxR = math.max(r1, r2)
-    bool exited = false // 사이 봉 중 RSI 종가가 과매수 아래로 내려온 적이 있는지
-    n = x2 - x1
-    if n > 1
-        for i = 1 to n - 1
-            off  = bar_index - (x1 + i)
-            t    = float(i) / n
-            if high[off] > p1 + (p2 - p1) * t
-                clean := false
-            if rsi[off] > r1 + (r2 - r1) * t + RSI_SLACK
-                clean := false
-            maxR := math.max(maxR, rsi[off])
-            if rsi[off] < obLvl
-                exited := true
-    [clean, maxR, exited]
+RSI_SLACK = 0.5 // RSI 선 통과 허용 오차 (RSI 포인트)
+LBL_GAP   = 4.0 // RSI 창 라벨을 선 끝에서 띄우는 거리 (RSI 포인트) — 박스 없이 글자만
 
 // 이전 저점·고점 기록 (최근 30개) — 시작점을 바로 앞 하나가 아니라 범위 안에서 찾기 위함
 var array<int>   plBars  = array.new<int>()
@@ -160,6 +123,8 @@ var array<int>   phBars  = array.new<int>()
 var array<float> phVals  = array.new<float>()
 var array<float> phRsis  = array.new<float>()
 var array<int>   phRBars = array.new<int>()
+
+// 선 검사는 함수 없이 여기서 직접 과거 봉을 확인 (Pine 함수 안의 과거 참조는 결과가 달라질 수 있음)
 
 // ── 일반 다이버전스 ──
 // 상승: 가격 저점 ↓, RSI 저점 ↑, 첫 저점 RSI ≤ 과매도(설정), 두 번째 저점 RSI > 과매도 = 해소 상태(설정), 선이 깨지지 않음
@@ -174,14 +139,31 @@ if showReg and showBull and plFound and array.size(plBars) > 0
         gap = pivBar - x1
         if gap > rangeMax
             break
-        p1 = array.get(plVals, k)
-        r1 = array.get(plRsis, k)
+        p1  = array.get(plVals, k)
+        r1  = array.get(plRsis, k)
+        xr1 = array.get(plRBars, k)
         if gap >= rangeMin and curLow < p1 and rsiLowNear > r1 and (not needZone or r1 <= osLvl)
-            [c, m, e] = checkLows(x1, p1, r1, pivBar, curLow, rsiLowNear)
-            if c and (not needExit or (e and rsiLowNear > osLvl))
+            bool ok     = true
+            bool exited = false
+            // 가격: 두 점을 잇는 선을 사이 봉이 뚫으면 무효
+            for i = 1 to gap - 1
+                if low[gap - i + lbR] < p1 + (curLow - p1) * i / gap
+                    ok := false
+                    break
+            // RSI: 실제로 그려지는 RSI 선을 사이 봉이 뚫으면 무효 + 과매도 해소 여부
+            rgap = rsiLowBar - xr1
+            if ok and rgap > 1
+                for i = 1 to rgap - 1
+                    rv = rsi[bar_index - (xr1 + i)]
+                    if rv < r1 + (rsiLowNear - r1) * i / rgap - RSI_SLACK
+                        ok := false
+                        break
+                    if rv > osLvl
+                        exited := true
+            if ok and (not needExit or (exited and rsiLowNear > osLvl))
                 rbX  := x1
                 rbP  := p1
-                rbXR := array.get(plRBars, k)
+                rbXR := xr1
                 rbR  := r1
                 break
 
@@ -195,14 +177,31 @@ if showReg and showBear and phFound and array.size(phBars) > 0
         gap = pivBar - x1
         if gap > rangeMax
             break
-        p1 = array.get(phVals, k)
-        r1 = array.get(phRsis, k)
+        p1  = array.get(phVals, k)
+        r1  = array.get(phRsis, k)
+        xr1 = array.get(phRBars, k)
         if gap >= rangeMin and curHigh > p1 and rsiHighNear < r1 and (not needZone or r1 >= obLvl)
-            [c, m, e] = checkHighs(x1, p1, r1, pivBar, curHigh, rsiHighNear)
-            if c and (not needExit or (e and rsiHighNear < obLvl))
+            bool ok     = true
+            bool exited = false
+            // 가격: 두 점을 잇는 선을 사이 봉이 뚫으면 무효
+            for i = 1 to gap - 1
+                if high[gap - i + lbR] > p1 + (curHigh - p1) * i / gap
+                    ok := false
+                    break
+            // RSI: 실제로 그려지는 RSI 선을 사이 봉이 뚫으면 무효 + 과매수 해소 여부
+            rgap = rsiHighBar - xr1
+            if ok and rgap > 1
+                for i = 1 to rgap - 1
+                    rv = rsi[bar_index - (xr1 + i)]
+                    if rv > r1 + (rsiHighNear - r1) * i / rgap + RSI_SLACK
+                        ok := false
+                        break
+                    if rv < obLvl
+                        exited := true
+            if ok and (not needExit or (exited and rsiHighNear < obLvl))
                 rsX  := x1
                 rsP  := p1
-                rsXR := array.get(phRBars, k)
+                rsXR := xr1
                 rsR  := r1
                 break
 
@@ -214,20 +213,37 @@ int   hbX  = na
 float hbP  = na
 int   hbXR = na
 float hbR  = na
-if showHid and showBull and plFound and rsiLowNear <= osLvl and array.size(plBars) > 0
+if showHid and rsiLowNear <= osLvl and showBull and plFound and array.size(plBars) > 0
     for k = array.size(plBars) - 1 to 0
         x1  = array.get(plBars, k)
         gap = pivBar - x1
         if gap > rangeMax
             break
-        p1 = array.get(plVals, k)
-        r1 = array.get(plRsis, k)
+        p1  = array.get(plVals, k)
+        r1  = array.get(plRsis, k)
+        xr1 = array.get(plRBars, k)
         if gap >= rangeMin and curLow > p1 and math.abs(r1 - 50) <= midTol
-            [c, m, e] = checkLows(x1, p1, r1, pivBar, curLow, rsiLowNear)
-            if c
+            bool ok     = true
+            bool exited = false
+            // 가격: 두 점을 잇는 선을 사이 봉이 뚫으면 무효
+            for i = 1 to gap - 1
+                if low[gap - i + lbR] < p1 + (curLow - p1) * i / gap
+                    ok := false
+                    break
+            // RSI: 실제로 그려지는 RSI 선을 사이 봉이 뚫으면 무효 + 과매도 해소 여부
+            rgap = rsiLowBar - xr1
+            if ok and rgap > 1
+                for i = 1 to rgap - 1
+                    rv = rsi[bar_index - (xr1 + i)]
+                    if rv < r1 + (rsiLowNear - r1) * i / rgap - RSI_SLACK
+                        ok := false
+                        break
+                    if rv > osLvl
+                        exited := true
+            if ok
                 hbX  := x1
                 hbP  := p1
-                hbXR := array.get(plRBars, k)
+                hbXR := xr1
                 hbR  := r1
                 break
 
@@ -235,20 +251,37 @@ int   hsX  = na
 float hsP  = na
 int   hsXR = na
 float hsR  = na
-if showHid and showBear and phFound and rsiHighNear >= obLvl and array.size(phBars) > 0
+if showHid and rsiHighNear >= obLvl and showBear and phFound and array.size(phBars) > 0
     for k = array.size(phBars) - 1 to 0
         x1  = array.get(phBars, k)
         gap = pivBar - x1
         if gap > rangeMax
             break
-        p1 = array.get(phVals, k)
-        r1 = array.get(phRsis, k)
+        p1  = array.get(phVals, k)
+        r1  = array.get(phRsis, k)
+        xr1 = array.get(phRBars, k)
         if gap >= rangeMin and curHigh < p1 and math.abs(r1 - 50) <= midTol
-            [c, m, e] = checkHighs(x1, p1, r1, pivBar, curHigh, rsiHighNear)
-            if c
+            bool ok     = true
+            bool exited = false
+            // 가격: 두 점을 잇는 선을 사이 봉이 뚫으면 무효
+            for i = 1 to gap - 1
+                if high[gap - i + lbR] > p1 + (curHigh - p1) * i / gap
+                    ok := false
+                    break
+            // RSI: 실제로 그려지는 RSI 선을 사이 봉이 뚫으면 무효 + 과매수 해소 여부
+            rgap = rsiHighBar - xr1
+            if ok and rgap > 1
+                for i = 1 to rgap - 1
+                    rv = rsi[bar_index - (xr1 + i)]
+                    if rv > r1 + (rsiHighNear - r1) * i / rgap + RSI_SLACK
+                        ok := false
+                        break
+                    if rv < obLvl
+                        exited := true
+            if ok
                 hsX  := x1
                 hsP  := p1
-                hsXR := array.get(phRBars, k)
+                hsXR := xr1
                 hsR  := r1
                 break
 
@@ -281,16 +314,16 @@ if phFound
 drawDiv(int xp1, float p1, int xr1, float r1, int xp2, float p2, int xr2, float r2, color col, bool hidden, string txt, bool isBull) =>
     st = hidden ? line.style_dashed : regStyle
     lc = color.new(col, lineTr)
-    lblStyle = isBull ? label.style_label_up : label.style_label_down
+    lblCol   = color.new(col, 15)
     lblTxt   = labelMode == "짧게" ? str.replace(txt, " 다이버전스", "") : txt
     if onRsiPane
         line.new(xr1, r1, xr2, r2, color = lc, style = st, width = lineW)
         if labelMode != "숨김"
-            label.new(xr2, r2, lblTxt, color = color.new(col, 45), textcolor = color.white, size = lblSize, style = lblStyle)
+            label.new(xr2, isBull ? r2 - LBL_GAP : r2 + LBL_GAP, lblTxt, color = color(na), textcolor = lblCol, size = lblSize, style = label.style_none)
     if onPrice
         line.new(xp1, p1, xp2, p2, color = lc, style = st, width = lineW, force_overlay = true)
         if labelMode != "숨김"
-            label.new(xp2, p2, lblTxt, color = color.new(col, 45), textcolor = color.white, size = lblSize, style = lblStyle, yloc = isBull ? yloc.belowbar : yloc.abovebar, force_overlay = true)
+            label.new(xp2, p2, lblTxt, color = color(na), textcolor = lblCol, size = lblSize, style = label.style_none, yloc = isBull ? yloc.belowbar : yloc.abovebar, force_overlay = true)
 
 var string lastDiv    = "없음"
 var int    lastDivBar = na
